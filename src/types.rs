@@ -1,4 +1,8 @@
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
+
+// The number of songs that we report back with last played
+const LAST_PLAYED_LENGTH: usize = 20;
 
 #[derive(Deserialize)]
 pub(crate) struct Config {
@@ -32,15 +36,42 @@ pub(crate) struct ErrorMessage {
 }
 
 pub(crate) struct User {
+    id: String,
     username: String,
-    password: String,
+
+    // do we want to store preferences on the server
+    store_data_serverside: bool,
+    // store preferences for sending thumbnail data for low speed connections
+    thumbnails: bool,
+    // auto play songs when done
+    autoplay: bool,
+
+    // allow people to follow
+    allow_followers: bool,
+    // public profile that can be searched
     public: bool,
+    // show song activity
+    activity: bool,
+    // show last played
     last_played: VecDeque<String>,
+    // display nick name
     display_name: String,
+    // id of followers
     followers: Vec<String>,
+    // id of following
     following: Vec<String>,
+    // count to playback statistics
     analytics: bool,
-    admin: bool,
+}
+
+impl User {
+    pub(crate) fn now_playing(&mut self, id: String) {
+        if self.last_played.len() > 19 {
+            let _ = self.last_played.pop_back();
+        }
+        self.last_played.push_front(id);
+    }
+    // pub(crate) fn update_user(&mut self, jjjjjjj)
 }
 
 pub(crate) struct Song {

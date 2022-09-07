@@ -37,6 +37,8 @@ enum ClientError {
     NotFound(String),
     #[display(fmt = "unsupported_algorithm")]
     UnsupportedAlgortithm(AlgorithmParameters),
+    #[display(fmt = "invalid user id")]
+    InvalidUserID(String),
 }
 
 impl ResponseError for ClientError {
@@ -68,6 +70,11 @@ impl ResponseError for ClientError {
                 )),
                 message: "Bad credentials".to_string(),
             }),
+            Self::InvalidUserID(msg) => HttpResponse::Unauthorized().json(ErrorMessage {
+                error: Some("invalid_user_id".to_string()),
+                error_description: Some(msg.to_string()),
+                message: "invalid user id".to_string(),
+            }),
         }
     }
 
@@ -79,8 +86,10 @@ impl ResponseError for ClientError {
 #[derive(Debug, Deserialize)]
 pub struct Claims {
     _permissions: Option<HashSet<String>>,
+    pub(crate) sub: String,
 }
 
+// todo, remove unwraps
 impl FromRequest for Claims {
     type Error = Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self, Self::Error>>>>;
