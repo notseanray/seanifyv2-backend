@@ -3,8 +3,7 @@ use actix_web::{
     dev::ServiceResponse,
     http::StatusCode,
     middleware::{ErrorHandlerResponse, ErrorHandlers},
-    HttpResponse,
-    Result,
+    HttpResponse, Result,
 };
 
 pub fn err_handlers<B: 'static>() -> ErrorHandlers<B> {

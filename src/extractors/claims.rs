@@ -1,5 +1,9 @@
 use crate::types::ErrorMessage;
-use actix_web::{error::ResponseError, http::{StatusCode, Uri}, Error, FromRequest, HttpResponse};
+use actix_web::{
+    error::ResponseError,
+    http::{StatusCode, Uri},
+    Error, FromRequest, HttpResponse,
+};
 use actix_web_httpauth::{
     extractors::bearer::BearerAuth, headers::www_authenticate::bearer::Bearer,
 };

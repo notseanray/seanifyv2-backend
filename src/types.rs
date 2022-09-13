@@ -35,12 +35,13 @@ pub(crate) struct ErrorMessage {
     pub message: String,
 }
 
+#[derive(Serialize)]
 pub(crate) struct User {
     id: String,
     username: String,
 
     // do we want to store preferences on the server
-    store_data_serverside: bool,
+    serverside: bool,
     // store preferences for sending thumbnail data for low speed connections
     thumbnails: bool,
     // auto play songs when done
@@ -49,7 +50,7 @@ pub(crate) struct User {
     // allow people to follow
     allow_followers: bool,
     // public profile that can be searched
-    public: bool,
+    public_account: bool,
     // show song activity
     activity: bool,
     // show last played
@@ -72,6 +73,56 @@ impl User {
         self.last_played.push_front(id);
     }
     // pub(crate) fn update_user(&mut self, jjjjjjj)
+}
+
+#[derive(Serialize)]
+pub(crate) struct UserFromDB {
+    pub(crate) id: String,
+    pub(crate) username: String,
+
+    // do we want to store preferences on the server
+    pub(crate) serverside: bool,
+    // store preferences for sending thumbnail data for low speed connections
+    pub(crate) thumbnails: bool,
+    // auto play songs when done
+    pub(crate) autoplay: bool,
+
+    // allow people to follow
+    pub(crate) allow_followers: bool,
+    // public profile that can be searched
+    pub(crate) public_account: bool,
+    // show song activity
+    pub(crate) activity: bool,
+    // show last played
+    pub(crate) last_played: String,
+    // display nick name
+    pub(crate) display_name: String,
+    // id of followers
+    pub(crate) followers: String,
+    // id of following
+    pub(crate) following: String,
+    // count to playback statistics
+    pub(crate) analytics: bool,
+}
+
+impl From<UserFromDB> for User {
+    fn from(u: UserFromDB) -> Self {
+        Self {
+            id: u.id,
+            username: u.username,
+            serverside: u.serverside,
+            thumbnails: u.thumbnails,
+            autoplay: u.autoplay,
+            allow_followers: u.allow_followers,
+            public_account: u.public_account,
+            activity: u.activity,
+            last_played: u.last_played.split('`').map(|x| x.into()).collect(),
+            display_name: u.display_name,
+            followers: u.followers.split('`').map(|x| x.into()).collect(),
+            following: u.following.split('`').map(|x| x.into()).collect(),
+            analytics: u.analytics
+        }
+    }
 }
 
 pub(crate) struct Song {
