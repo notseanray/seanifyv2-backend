@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use crate::fuzzy::fuzzy_search_best_n;
 
 // The number of songs that we report back with last played
 const LAST_PLAYED_LENGTH: usize = 20;
+const MAX_LAST_PLAYED: usize = 20;
+const MAX_SEARCH_RESULTS: usize = 20;
 
 #[derive(Deserialize)]
 pub(crate) struct Config {
@@ -67,7 +70,7 @@ pub(crate) struct User {
 
 impl User {
     pub(crate) fn now_playing(&mut self, id: String) {
-        if self.last_played.len() > 19 {
+        if self.last_played.len() > MAX_LAST_PLAYED {
             let _ = self.last_played.pop_back();
         }
         self.last_played.push_front(id);
@@ -125,14 +128,26 @@ impl From<UserFromDB> for User {
     }
 }
 
-pub(crate) struct Song {
-    id: String,
-    title: String,
-    album: Option<String>,
-    artist: String,
+pub(crate) struct Song<'a> {
+    id: &'a str,
+    pub(crate) title: &'a str,
+    album: Option<&'a str>,
+    artist: &'a str,
     duration: f64,
-    genre: Option<String>,
+    genre: Option<&'a str>,
     track_disc: [u16; 2],
-    album_arist: Vec<String>,
+    album_arist: Vec<&'a str>,
     size: u64,
+}
+
+pub(crate) struct SongSearch<'a> {
+    songs: &'a Vec<Song<'a>>,
+}
+
+impl SongSearch<'_> {
+    pub(crate) fn load() {
+    }
+    pub(crate) fn search<'a>(&self, term: &'a str, amount: usize) -> &'a Vec<(&str, f32)> {
+        fuzzy_search_best_n(term, self.songs, amount)
+    }
 }

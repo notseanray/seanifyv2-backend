@@ -2,6 +2,7 @@ mod api;
 mod extractors;
 mod middlewares;
 mod types;
+mod fuzzy;
 
 use actix_cors::Cors;
 use actix_web::{App, HttpServer};

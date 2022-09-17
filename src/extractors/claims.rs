@@ -93,7 +93,6 @@ pub struct Claims {
     pub(crate) sub: String,
 }
 
-// todo, remove unwraps
 impl FromRequest for Claims {
     type Error = Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self, Self::Error>>>>;
