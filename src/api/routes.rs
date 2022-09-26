@@ -1,6 +1,6 @@
-use super::messages;
-use actix_web::{web, Scope};
+use super::users;
+use actix_web::Scope;
 
-pub fn routes() -> Scope {
-    web::scope("/api").service(messages::routes())
+pub fn users_routes() -> Scope {
+    users::routes()
 }

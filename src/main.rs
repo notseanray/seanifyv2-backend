@@ -1,29 +1,36 @@
 mod api;
 mod extractors;
+mod fuzzy;
 mod middlewares;
 mod types;
-mod fuzzy;
 
 use actix_cors::Cors;
 use actix_web::{App, HttpServer};
 use dotenv::dotenv;
 
+use crate::types::Config;
 use async_once::AsyncOnce;
 use lazy_static::lazy_static;
 use log::{error, info};
 use sqlx::{Pool, Sqlite};
 use std::{error::Error, time::Duration};
 
+pub(crate) const VERSION: &str = "0.1.0";
+pub(crate) const BRANCH: &str = "main";
+
 lazy_static! {
-    pub(crate) static ref DB: AsyncOnce<Pool<Sqlite>> =
-        AsyncOnce::new(async { Database::setup(env!("DATABASE_URL"), 100).await.expect("failed to check database url") });
+    pub(crate) static ref DB: AsyncOnce<Pool<Sqlite>> = AsyncOnce::new(async {
+        Database::setup(env!("DATABASE_URL"), 100)
+            .await
+            .expect("failed to check database url")
+    });
+    pub(crate) static ref CONFIG: Config = Config::default();
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenv().ok();
     pretty_env_logger::init();
-    let config = types::Config::default();
     HttpServer::new(move || {
         let auth0_config = extractors::Auth0Config::default();
         let cors = Cors::permissive();
@@ -33,9 +40,9 @@ async fn main() -> std::io::Result<()> {
             .wrap(middlewares::err_handlers())
             .wrap(middlewares::security_headers())
             .wrap(middlewares::logger())
-            .service(api::routes())
+            .service(api::users_routes())
     })
-    .bind((config.host, config.port))?
+    .bind((&*CONFIG.host, CONFIG.port))?
     .run()
     .await
 }

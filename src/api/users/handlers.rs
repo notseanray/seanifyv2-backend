@@ -3,12 +3,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use super::types::{Message, Metadata};
 use crate::types::{User, UserFromDB};
 use crate::{extractors::Claims, DB};
+use crate::{BRANCH, VERSION};
 use actix_web::HttpRequest;
 use actix_web::{get, web, Responder};
 use sqlx::{query, query_as};
-
-const VERSION: &str = "0.1.0";
-const BRANCH: &str = "main";
 
 macro_rules! fetch_db {
     ($db:expr) => {
@@ -45,7 +43,8 @@ pub async fn public() -> impl Responder {
 
 #[get("/ping")]
 pub async fn ping() -> impl Responder {
-    response!(format!("{:?}",
+    response!(format!(
+        "{:?}",
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or(Duration::from_secs(0))
@@ -64,7 +63,7 @@ pub(crate) async fn user_taken(req: HttpRequest) -> impl Responder {
             .fetch_optional(&mut fetch_db!(DB))
             .await;
         if let Ok(Some(v)) = result {
-            return response!(format!("{:?}", v))
+            return response!(format!("{:?}", v));
         }
     }
     response!("not taken")

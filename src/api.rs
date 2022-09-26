@@ -1,4 +1,4 @@
-mod messages;
 mod routes;
+mod users;
 
-pub use self::routes::routes;
+pub use self::routes::users_routes;

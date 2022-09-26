@@ -1,14 +1,41 @@
 use std::iter;
 
-use crate::types::Song;
+use crate::types::{Song, User};
 
-pub(crate) trait FuzzyComparable<'a> {
-    fn title(&self) -> &str;
+pub(crate) enum SearchType {
+    Artist,
+    Album,
+    Title,
+    Default,
+    User,
 }
 
-impl <'a>FuzzyComparable<'_> for Song<'a> {
-    fn title(&self) -> &'a str {
-        self.title
+pub(crate) trait FuzzyComparable<'a> {
+    fn search_term(&self, search_type: &SearchType) -> &str;
+}
+
+impl<'a> FuzzyComparable<'_> for Song<'a> {
+    fn search_term(&self, search_type: &SearchType) -> &'a str {
+        type S = SearchType;
+        match search_type {
+            S::Artist => self.artist,
+            S::Album => {
+                if let Some(v) = self.album {
+                    v
+                } else {
+                    ""
+                }
+            }
+            S::Title => self.title,
+            S::Default => self.default_search,
+            S::User => "",
+        }
+    }
+}
+
+impl<'a> FuzzyComparable<'_> for User {
+    fn search_term(&self, _: &SearchType) -> &str {
+        &self.username
     }
 }
 
@@ -16,22 +43,38 @@ impl <'a>FuzzyComparable<'_> for Song<'a> {
 // I don't need all the crate and I also want to be able to tweak the code without an additional
 // repo
 
-pub(crate) fn fuzzy_search_best_n<'a, T: FuzzyComparable<'a>>(s: &'a str, list: &'a [T], n: usize) -> Vec<(&'a str, f32)> {
-    fuzzy_search_sorted(s, list).into_iter().take(n).collect()
+pub(crate) fn fuzzy_search_best_n<'a, T: FuzzyComparable<'a>>(
+    s: &'a str,
+    list: &'a [T],
+    n: usize,
+    st: &SearchType,
+) -> Vec<(&'a T, f32)> {
+    fuzzy_search_sorted(s, list, st)
+        .into_iter()
+        .take(n)
+        .collect()
 }
 
-pub(crate) fn fuzzy_search_sorted<'a, T: FuzzyComparable<'a>>(s: &'a str, list: &'a [T]) -> Vec<(&'a str, f32)> {
-    let mut res = fuzzy_search(s, list);
-    res.sort_by(|(_, d1), (_, d2)| d2.partial_cmp(d1).unwrap()); // TODO to fix the unwrap call
+pub(crate) fn fuzzy_search_sorted<'a, T: FuzzyComparable<'a>>(
+    s: &'a str,
+    list: &'a [T],
+    st: &SearchType,
+) -> Vec<(&'a T, f32)> {
+    let mut res = fuzzy_search(s, list, st);
+    res.sort_by(|(_, d1), (_, d2)| d2.partial_cmp(d1).unwrap());
     res
 }
 
 #[inline]
-pub(crate) fn fuzzy_search<'a, T: FuzzyComparable<'a>>(s: &'a str, list: &'a [T]) -> Vec<(&'a str, f32)> {
+pub(crate) fn fuzzy_search<'a, T: FuzzyComparable<'a>>(
+    s: &'a str,
+    list: &'a [T],
+    st: &SearchType,
+) -> Vec<(&'a T, f32)> {
     list.iter()
         .map(|value| {
-            let res = fuzzy_compare(s, value.title());
-            (value.title(), res)
+            let res = fuzzy_compare(s, value.search_term(st));
+            (value, res)
         })
         .collect()
 }
@@ -47,7 +90,8 @@ pub(crate) fn fuzzy_compare(a: &str, b: &str) -> f32 {
 
     // accumulator
     let mut acc: f32 = 0.0f32;
-    // counts the number of trigrams of the first string that are also present in the second one
+    // counts the number of trigrams of the
+    // first string that are also present in the second one
     for t_a in &trigrams_a {
         for t_b in &trigrams_b {
             if t_a == t_b {
