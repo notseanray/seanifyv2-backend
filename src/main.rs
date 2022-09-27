@@ -9,33 +9,64 @@ use actix_web::{App, HttpServer};
 use dotenv::dotenv;
 
 use crate::types::Config;
-use async_once::AsyncOnce;
+use actix::{Actor, StreamHandler};
+use actix_web::{web, Error as ActixError, HttpRequest, HttpResponse};
+use actix_web_actors::ws;
 use lazy_static::lazy_static;
 use log::{error, info};
 use sqlx::{Pool, Sqlite};
+use std::sync::Arc;
 use std::{error::Error, time::Duration};
 
 pub(crate) const VERSION: &str = "0.1.0";
 pub(crate) const BRANCH: &str = "main";
 
 lazy_static! {
-    pub(crate) static ref DB: AsyncOnce<Pool<Sqlite>> = AsyncOnce::new(async {
-        Database::setup(env!("DATABASE_URL"), 100)
-            .await
-            .expect("failed to check database url")
-    });
     pub(crate) static ref CONFIG: Config = Config::default();
+}
+
+struct Database {
+    db: Pool<Sqlite>,
+}
+
+struct Ws;
+
+impl Actor for Ws {
+    type Context = ws::WebsocketContext<Self>;
+}
+
+impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for Ws {
+    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
+        match msg {
+            Ok(ws::Message::Ping(msg)) => ctx.pong(&msg),
+            Ok(ws::Message::Text(text)) => ctx.text(text),
+            Ok(ws::Message::Binary(bin)) => ctx.binary(bin),
+            _ => (),
+        }
+    }
+}
+
+async fn next_song(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, ActixError> {
+    let resp = ws::start(Ws {}, &req, stream);
+    println!("{:?}", resp);
+    resp
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenv().ok();
     pretty_env_logger::init();
+    let db = Arc::new(Database {
+        db: Database::setup(env!("DATABASE_URL"), 100)
+            .await
+            .expect("failed to check database url"),
+    });
     HttpServer::new(move || {
         let auth0_config = extractors::Auth0Config::default();
         let cors = Cors::permissive();
         App::new()
             .app_data(auth0_config)
+            .app_data(db.clone())
             .wrap(cors)
             .wrap(middlewares::err_handlers())
             .wrap(middlewares::security_headers())
@@ -46,8 +77,6 @@ async fn main() -> std::io::Result<()> {
     .run()
     .await
 }
-
-pub(crate) struct Database(Pool<Sqlite>);
 
 impl Database {
     pub(crate) async fn setup(uri: &str, timeout: u64) -> Result<Pool<Sqlite>, Box<dyn Error>> {

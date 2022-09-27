@@ -1,16 +1,29 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::types::{Message, Metadata};
+use crate::extractors::Claims;
 use crate::types::{User, UserFromDB};
-use crate::{extractors::Claims, DB};
-use crate::{BRANCH, VERSION};
+use crate::{Database, BRANCH, VERSION};
 use actix_web::HttpRequest;
-use actix_web::{get, web, Responder};
+use actix_web::{
+    get,
+    web::{self, Data},
+    Responder,
+};
 use sqlx::{query, query_as};
+use std::sync::Mutex;
+
+type DB = Data<Mutex<Database>>;
 
 macro_rules! fetch_db {
-    ($db:expr) => {
-        ($db.get()).await.try_acquire().unwrap()
+    ($req:expr) => {
+        $req.app_data::<DB>()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .db
+            .try_acquire()
+            .unwrap()
     };
 }
 
@@ -59,8 +72,9 @@ pub(crate) async fn user_taken(req: HttpRequest) -> impl Responder {
             Ok(v) => v,
             Err(_) => return response!("invalid base64"),
         };
+        let mut db = fetch_db!(req);
         let result = query!("select * from users where username == $1", decoded)
-            .fetch_optional(&mut fetch_db!(DB))
+            .fetch_optional(&mut db)
             .await;
         if let Ok(Some(v)) = result {
             return response!(format!("{:?}", v));
@@ -70,9 +84,10 @@ pub(crate) async fn user_taken(req: HttpRequest) -> impl Responder {
 }
 
 #[get("/self")]
-pub async fn user_self(claims: Claims) -> impl Responder {
+pub async fn user_self(req: HttpRequest, claims: Claims) -> impl Responder {
+    let mut db = fetch_db!(req);
     let result = query_as!(UserFromDB, "select * from users where id == $1", claims.sub)
-        .fetch_optional(&mut fetch_db!(DB))
+        .fetch_optional(&mut db)
         .await;
     if let Ok(Some(v)) = result {
         let formated: User = v.into();
@@ -83,8 +98,6 @@ pub async fn user_self(claims: Claims) -> impl Responder {
 
 #[get("/new")]
 pub async fn user_new(claims: Claims, req: HttpRequest) -> impl Responder {
-    println!("claims {:?}", claims);
-    println!("req {:?}", req);
     web::Json(Message {
         metadata: Metadata {
             api: VERSION.to_owned(),

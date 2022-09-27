@@ -10,6 +10,8 @@ edition = "2021"
 actix-cors = "0.6.2"
 actix-web = { version = "4.1.0" , features = ["rustls"] }
 actix-web-httpauth = "0.8.0"
+actix-web-actors = "4.1.0"
+actix = "0.13.0"
 derive_more = "^0.99.17"
 reqwest = "0.11.11"
 dotenv = "^0.15.0"
@@ -23,4 +25,3 @@ futures = "0.3.24"
 sqlx = { version = "0.6.1", features = ["runtime-tokio-rustls", "sqlite", "macros"] }
 base64 = "0.13.0"
 lazy_static = "1.4.0"
-async_once = "0.2.6"
