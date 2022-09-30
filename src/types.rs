@@ -3,7 +3,9 @@ use crate::{
     CONFIG,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::VecDeque, fs, process::Command};
+use sqlx::query;
+use std::{collections::VecDeque, fs, process::{Command, self}};
+use derive_more::Display;
 
 // The number of songs that we report back with last played
 // const LAST_PLAYED_LENGTH: usize = 30;
@@ -83,7 +85,7 @@ pub(crate) struct ErrorMessage {
     pub message: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub(crate) struct User {
     pub(crate) id: String,
     pub(crate) username: String,
@@ -111,6 +113,7 @@ pub(crate) struct User {
     pub(crate) following: Vec<String>,
     // count to playback statistics
     pub(crate) analytics: bool,
+    pub(crate) lastupdate: u64,
 }
 
 impl User {
@@ -151,6 +154,7 @@ pub(crate) struct UserFromDB {
     pub(crate) following: String,
     // count to playback statistics
     pub(crate) analytics: bool,
+    pub(crate) lastupdate: String,
 }
 
 impl From<UserFromDB> for User {
@@ -169,25 +173,33 @@ impl From<UserFromDB> for User {
             followers: u.followers.split('`').map(|x| x.into()).collect(),
             following: u.following.split('`').map(|x| x.into()).collect(),
             analytics: u.analytics,
+            lastupdate: u.lastupdate.parse().unwrap_or(0),
         }
     }
 }
 
+#[derive(Serialize)]
 pub(crate) struct Song<'a> {
     pub(crate) id: &'a str,
-    pub(crate) title: &'a str,
-    pub(crate) album: Option<&'a str>,
-    pub(crate) artist: &'a str,
+    pub(crate) title: String,
+    pub(crate) artist: String,
+    pub(crate) album: String,
     pub(crate) duration: f64,
-    pub(crate) genre: Option<&'a str>,
-    pub(crate) track_disc: [u16; 2],
-    pub(crate) album_arist: Vec<&'a str>,
-    pub(crate) size: u64,
-    pub(crate) default_search: &'a str,
+    pub(crate) year: u16,
+    pub(crate) genre: String,
+    pub(crate) added_by: String,
+    pub(crate) default_search: String,
 }
 
-impl Song<'_> {
-    fn get_id(url: &str) -> Option<&str> {
+#[derive(Debug, Display)]
+enum SongError {
+    #[display(fmt = "metadata extraction failure")]
+    MetadataExtractionFailture,
+}
+
+type SE = SongError;
+impl <'a>Song<'a> {
+    fn get_id(url: &'a str) -> Option<&'a str> {
         let id = url.find("?v=");
         if let Some(v) = id {
             let split = &url[v..];
@@ -200,7 +212,8 @@ impl Song<'_> {
         }
         None
     }
-    pub(crate) async fn from_url(url: &str) -> Option<Song<'_>> {
+// yt-dlp --socket-timeout 3 --embed-thumbnail --audio-format mp3 --extract-audio --output "M3HhNcl2dMA.%(ext)s" --add-metadata https://www.youtube.com/watch\?v\=M3HhNcl2dMA
+    pub(crate) async fn from_url(url: &'a str, user: String) -> Option<Song<'a>> {
         if let Some(v) = Self::get_id(url) {
             let _ = fs::create_dir_all("./songs");
             let mut cmd = Command::new("yt-dlp");
@@ -210,36 +223,78 @@ impl Song<'_> {
                 "--embed-thumbnail",
                 "--audio-format",
                 "mp3",
-                "--embed-thumbnail",
                 "--extract-audio",
+                "--add-metadata",
                 "--output",
-                &format!("songs/{v}"),
+                &format!("songs/{v}.%(ext)s"),
                 url,
             ]);
             let cmd = cmd.output().expect("yt dlp not installed");
-            // insert into db
+            if cmd.status.success() && Self::insert(v, user).await.is_ok() {
+                // ws msg
+            }
+
         }
         unimplemented!();
     }
-    pub(crate) async fn insert() {}
+    // pass in db handle from from_url
+    async fn insert(id: &str, user: String) -> Result<(), SongError> {
+        let meta = mp3_metadata::read_from_file(format!("songs/{id}.mp3")).unwrap();
+        if let Some(tag) = meta.tag {
+            println!("title: {}", tag.title);
+            println!("artist: {}", tag.artist);
+            println!("album: {}", tag.album);
+            println!("year: {}", tag.year);
+            println!("comment: {}", tag.comment);
+            println!("genre: {:?}", tag.genre);
+            let new_song = Self {
+                default_search: format!("{} {} {}", &tag.title, &tag.artist, &tag.album),
+                id,
+                title: tag.title,
+                artist: tag.artist,
+                album: tag.album,
+                duration: meta.duration.as_secs_f64(),
+                year: tag.year,
+                genre: format!("{:?}", tag.genre),
+                added_by: user,
+            };
+            // query!("INSERT INTO songs VALUES $1", new_song).execute();
+            Ok(())
+        } else {
+            Err(SE::MetadataExtractionFailture)
+        }
+    }
 }
 
 pub(crate) struct SongSearch<'a> {
     songs: &'a Vec<Song<'a>>,
 }
 
-impl SongSearch<'_> {
+// might not need wrapper type for serialization
+#[derive(Serialize)]
+pub(crate) struct SearchResult<'a>(Vec<(&'a Song<'a>, f32)>);
+
+impl <'a>SongSearch<'a> {
     pub(crate) fn load() {}
-    pub(crate) fn search<'a>(
+    pub(crate) fn update() {}
+    pub(crate) fn search(
         &self,
         term: &'a str,
         search_type: SearchType,
         amount: usize,
-    ) -> Vec<(&'a Song, f32)> {
-        fuzzy_search_best_n(term, self.songs, amount, &search_type)
+    ) -> SearchResult<'a> {
+        SearchResult(fuzzy_search_best_n(term, self.songs, amount, &search_type))
     }
 }
 
-// pub(crate) struct Playlist<'a> {
-//
-// }
+pub(crate) struct Playlist<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) public: bool,
+    pub(crate) songs: Vec<String>,
+    pub(crate) author: &'a str,
+    pub(crate) description: &'a str,
+    pub(crate) likes: Vec<&'a str>,
+    pub(crate) cover: Option<String>,
+    pub(crate) duration: u64,
+    pub(crate) lastupdate: u64,
+}

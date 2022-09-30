@@ -93,11 +93,14 @@ pub async fn user_self(req: HttpRequest, claims: Claims) -> impl Responder {
         let formated: User = v.into();
         return response!(serde_json::to_string(&formated).unwrap());
     }
-    response!("fail")
+    response!("failed to fetch user data, does the account exist?")
 }
 
 #[get("/new")]
 pub async fn user_new(claims: Claims, req: HttpRequest) -> impl Responder {
+    if let Some(v) = req.headers().get("Data") {
+        let data: User = serde_json::from_str(v.to_str().unwrap()).unwrap();
+    }
     web::Json(Message {
         metadata: Metadata {
             api: VERSION.to_owned(),

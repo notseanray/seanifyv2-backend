@@ -1,6 +1,6 @@
 use std::iter;
 
-use crate::types::{Song, User};
+use crate::types::{Song, User, Playlist};
 
 pub(crate) enum SearchType {
     Artist,
@@ -14,28 +14,28 @@ pub(crate) trait FuzzyComparable<'a> {
     fn search_term(&self, search_type: &SearchType) -> &str;
 }
 
-impl<'a> FuzzyComparable<'_> for Song<'a> {
-    fn search_term(&self, search_type: &SearchType) -> &'a str {
+impl<'a> FuzzyComparable<'a> for Song<'a> {
+    fn search_term(&self, search_type: &SearchType) -> &str {
         type S = SearchType;
         match search_type {
-            S::Artist => self.artist,
-            S::Album => {
-                if let Some(v) = self.album {
-                    v
-                } else {
-                    ""
-                }
-            }
-            S::Title => self.title,
-            S::Default => self.default_search,
+            S::Artist => &self.artist,
+            S::Album => &self.album,
+            S::Title => &self.title,
+            S::Default => &self.default_search,
             S::User => "",
         }
     }
 }
 
-impl<'a> FuzzyComparable<'_> for User {
+impl<'a> FuzzyComparable<'a> for User {
     fn search_term(&self, _: &SearchType) -> &str {
         &self.username
+    }
+}
+
+impl<'a> FuzzyComparable<'a> for Playlist<'_> {
+    fn search_term(&self, _: &SearchType) -> &str {
+        &self.name
     }
 }
 
