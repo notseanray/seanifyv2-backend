@@ -3,8 +3,7 @@ use std::iter;
 use crate::types::{Playlist, Song, User};
 
 pub(crate) enum SearchType {
-    Artist,
-    Album,
+    Uploader,
     Title,
     Default,
     User,
@@ -18,8 +17,7 @@ impl<'a> FuzzyComparable<'a> for Song {
     fn search_term(&self, search_type: &SearchType) -> &str {
         type S = SearchType;
         match search_type {
-            S::Artist => &self.artist,
-            S::Album => &self.album,
+            S::Uploader => &self.uploader,
             S::Title => &self.title,
             S::Default => &self.default_search,
             S::User => "",

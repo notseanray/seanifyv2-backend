@@ -1,7 +1,7 @@
 -- Add migration script here
 CREATE TABLE IF NOT EXISTS users
 (
-    id              TEXT PRIMARY KEY NOT NULL,
+    id              TEXT             NOT NULL,
     username        TEXT             NOT NULL,
     serverside      BOOLEAN          NOT NULL DEFAULT TRUE,
     thumbnails      BOOLEAN          NOT NULL DEFAULT TRUE,
@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users
     followers       TEXT             NOT NULL,
     following       TEXT             NOT NULL,
     analytics       BOOLEAN          NOT NULL,
-    lastupdate      TEXT             NOT NULL
+    lastupdate      TEXT             NOT NULL,
+    PRIMARY KEY(id, username)
 );
 

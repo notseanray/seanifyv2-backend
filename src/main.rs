@@ -3,6 +3,7 @@ mod extractors;
 mod fuzzy;
 mod middlewares;
 mod types;
+mod youtube;
 
 use actix_cors::Cors;
 use actix_web::{App, HttpServer, Scope};

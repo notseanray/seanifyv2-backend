@@ -1,6 +1,6 @@
 use crate::{
     fuzzy::{fuzzy_search_best_n, SearchType},
-    CONFIG,
+    CONFIG, youtube::VideoData,
 };
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
@@ -10,6 +10,7 @@ use std::{
     fs,
     process::{self, Command},
 };
+use anyhow::{Result, anyhow};
 
 // The number of songs that we report back with last played
 // const LAST_PLAYED_LENGTH: usize = 30;
@@ -204,6 +205,7 @@ impl From<User> for UserFromDB {
     }
 }
 
+// no need to convert structs just to do a tiny operation
 impl UserFromDB {
     pub(crate) fn now_playing(previous: &str, new_song: &str) -> String {
         let cut = previous.find('`');
@@ -217,7 +219,11 @@ impl UserFromDB {
         previous.into()
     }
     pub(crate) fn follow(previous: &str, follower: &str) -> String {
-        format!("{previous}`{follower}")
+        if previous.is_empty() {
+            follower.to_string()
+        } else {
+            format!("{previous}`{follower}")
+        }
     }
     pub(crate) fn unfollow(previous: &str, unfollower: &str) -> String {
         let mut new = previous.replace(unfollower, "").replace("``", "`");
@@ -231,15 +237,39 @@ impl UserFromDB {
     }
 }
 
+pub(crate) struct DownloadCache(VecDeque<(String, String)>);
+
+impl DownloadCache {
+    pub(crate) fn append(&mut self, url: String, user: String) {
+        self.0.push_front((url, user));
+    }
+    pub(crate) async fn cycle(&mut self, db: &mut PoolConnection<Sqlite>) {
+        if let Some((url, user)) = self.0.pop_back() {
+            Song::from_url(&url, user, db).await;
+        }
+    }
+    pub(crate) fn clear(&mut self) {
+        self.0.clear();
+    }
+    pub(crate) fn list(&self) -> String {
+        serde_json::to_string(&self.0).unwrap()
+    }
+}
+
 #[derive(Serialize)]
 pub(crate) struct Song {
     pub(crate) id: String,
     pub(crate) title: String,
+    pub(crate) uploader: String,
     pub(crate) artist: String,
+    pub(crate) genre: String,
     pub(crate) album: String,
     pub(crate) duration: f64,
-    pub(crate) year: i64,
-    pub(crate) genre: String,
+    pub(crate) age_limit: i64,
+    pub(crate) webpage_url: String,
+    pub(crate) was_live: bool,
+    pub(crate) upload_date: String,
+    pub(crate) filesize: i64,
     pub(crate) added_by: String,
     pub(crate) default_search: String,
 }
@@ -247,11 +277,12 @@ pub(crate) struct Song {
 #[derive(Debug, Display)]
 enum SongError {
     #[display(fmt = "metadata extraction failure")]
-    MetadataExtractionFailture,
+    MetadataExtractionFailure,
 }
 
 type SE = SongError;
 impl<'a> Song {
+    // convert to return Result<Error>
     fn get_id(url: &'a str) -> Option<&'a str> {
         let id = url.find("?v=");
         if let Some(v) = id {
@@ -265,7 +296,7 @@ impl<'a> Song {
         }
         None
     }
-    // yt-dlp --socket-timeout 3 --embed-thumbnail --audio-format mp3 --extract-audio --output "M3HhNcl2dMA.%(ext)s" --add-metadata https://www.youtube.com/watch\?v\=M3HhNcl2dMA
+    // yt-dlp --socket-timeout 3 --embed-thumbnail --audio-format mp3 --extract-audio --output "M3HhNcl2dMA.%(ext)s" --add-metadata --write-info-json https://www.youtube.com/watch\?v\=M3HhNcl2dMA
     pub(crate) async fn from_url(
         url: &'a str,
         user: String,
@@ -280,10 +311,13 @@ impl<'a> Song {
                 "--embed-thumbnail",
                 "--audio-format",
                 "mp3",
+                "--retries",
+                &CONFIG.retries.to_string(),
                 "--extract-audio",
                 "--add-metadata",
                 "--output",
                 &format!("songs/{v}.%(ext)s"),
+                "--write-info-json",
                 url,
             ]);
             let cmd = cmd.output().expect("yt dlp not installed");
@@ -298,24 +332,38 @@ impl<'a> Song {
         id: &str,
         user: String,
         db: &mut PoolConnection<Sqlite>,
-    ) -> Result<(), SongError> {
-        let meta = mp3_metadata::read_from_file(format!("songs/{id}.mp3")).unwrap();
+    ) -> Result<()> {
+        let meta = match mp3_metadata::read_from_file(format!("songs/{id}.mp3")) {
+            Ok(v) => v,
+            _ => return Err(anyhow!("Failed to extract metadata")),
+        };
+        let data = VideoData::load_and_replace(id)?;
         if let Some(tag) = meta.tag {
+            let artist = if tag.artist.is_empty() {
+                data.uploader.clone()
+            } else {
+                tag.artist.clone()
+            };
             let new_song = Self {
-                default_search: format!("{} {} {}", &tag.title, &tag.artist, &tag.album),
+                default_search: format!("{} {} {}", &data.title, &tag.artist, &tag.album),
                 id: id.to_string(),
-                title: tag.title,
-                artist: tag.artist,
+                title: data.title,
+                uploader: data.uploader,
+                artist,
+                genre: format!("{:?}", tag.genre),
                 album: tag.album,
                 duration: meta.duration.as_secs_f64(),
-                year: tag.year as i64,
-                genre: format!("{:?}", tag.genre),
+                age_limit: data.age_limit,
+                webpage_url: data.webpage_url,
+                was_live: data.was_live,
+                upload_date: data.upload_date,
+                filesize: data.filesize,
                 added_by: user,
             };
-            // query!("INSERT INTO songs VALUES $1", new_song).execute(db);
+            let _ = query!("insert into songs(id, title, uploader, artist, genre, album, duration, age_limit, webpage_url, was_live, upload_date, filesize, added_by, default_search) values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)", new_song.id, new_song.title, new_song.uploader, new_song.artist, new_song.genre, new_song.album, new_song.duration, new_song.age_limit, new_song.webpage_url, new_song.was_live, new_song.upload_date, new_song.filesize, new_song.added_by, new_song.default_search).execute(db).await;
             Ok(())
         } else {
-            Err(SE::MetadataExtractionFailture)
+            Err(anyhow!("failed to read song data"))
         }
     }
 }
