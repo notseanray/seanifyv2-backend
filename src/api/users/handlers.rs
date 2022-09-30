@@ -1,6 +1,4 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-use super::types::{Message, Metadata};
+use crate::api::types::{Metadata, Message};
 use crate::extractors::Claims;
 use crate::types::{User, UserFromDB};
 use crate::{Database, BRANCH, VERSION};
@@ -11,38 +9,13 @@ use actix_web::{
     Responder,
 };
 use sqlx::{query, query_as};
+use crate::{fetch_db, response};
 use std::sync::Mutex;
 
-type DB = Data<Mutex<Database>>;
-
-macro_rules! fetch_db {
-    ($req:expr) => {
-        $req.app_data::<DB>()
-            .unwrap()
-            .lock()
-            .unwrap()
-            .db
-            .try_acquire()
-            .unwrap()
-    };
-}
-
-macro_rules! response {
-    ($message:expr) => {
-        web::Json(Message {
-            metadata: Metadata {
-                api: VERSION.to_string(),
-                branch: BRANCH.to_string(),
-            },
-            text: $message.to_string(),
-        })
-    };
-}
-
-#[get("/admin")]
-pub async fn admin(claims: Claims) -> impl Responder {
-    response!(format!("admin message {}", claims.sub))
-}
+// #[get("/admin")]
+// pub async fn admin(claims: Claims) -> impl Responder {
+//     response!(format!("admin message {}", claims.sub))
+// }
 
 #[get("/protected")]
 pub async fn protected(claims: Claims) -> impl Responder {
@@ -54,16 +27,8 @@ pub async fn public() -> impl Responder {
     response!(format!("public"))
 }
 
-#[get("/ping")]
-pub async fn ping() -> impl Responder {
-    response!(format!(
-        "{:?}",
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or(Duration::from_secs(0))
-            .as_millis()
-    ))
-}
+
+// pub(crate) async check_taken()
 
 #[get("/taken")]
 pub(crate) async fn user_taken(req: HttpRequest) -> impl Responder {
@@ -73,6 +38,7 @@ pub(crate) async fn user_taken(req: HttpRequest) -> impl Responder {
             Err(_) => return response!("invalid base64"),
         };
         let mut db = fetch_db!(req);
+        let decoded = String::from_utf8_lossy(&decoded);
         let result = query!("select * from users where username == $1", decoded)
             .fetch_optional(&mut db)
             .await;
@@ -100,6 +66,7 @@ pub async fn user_self(req: HttpRequest, claims: Claims) -> impl Responder {
 pub async fn user_new(claims: Claims, req: HttpRequest) -> impl Responder {
     if let Some(v) = req.headers().get("Data") {
         let data: User = serde_json::from_str(v.to_str().unwrap()).unwrap();
+        
     }
     web::Json(Message {
         metadata: Metadata {
@@ -108,4 +75,34 @@ pub async fn user_new(claims: Claims, req: HttpRequest) -> impl Responder {
         },
         text: format!("This is an admin message. {}", claims.sub),
     })
+}
+
+#[get("/edit")]
+pub async fn edit(claims: Claims, req: HttpRequest) -> impl Responder {
+    "test".to_string()
+}
+
+#[get("/follow")]
+pub async fn follow(claims: Claims, req: HttpRequest) -> impl Responder {
+    "test".to_string()
+}
+
+#[get("/unfollow")]
+pub async fn unfollow(claims: Claims, req: HttpRequest) -> impl Responder {
+    "test".to_string()
+}
+
+#[get("/toptracks")]
+pub async fn toptracks(claims: Claims, req: HttpRequest) -> impl Responder {
+    "test".to_string()
+}
+
+#[get("/profile")]
+pub async fn profile(claims: Claims, req: HttpRequest) -> impl Responder {
+    "test".to_string()
+}
+
+#[get("/listen")]
+pub async fn listen(claims: Claims, req: HttpRequest) -> impl Responder {
+    "test".to_string()
 }

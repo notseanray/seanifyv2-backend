@@ -14,7 +14,7 @@ pub(crate) trait FuzzyComparable<'a> {
     fn search_term(&self, search_type: &SearchType) -> &str;
 }
 
-impl<'a> FuzzyComparable<'a> for Song<'a> {
+impl<'a> FuzzyComparable<'a> for Song {
     fn search_term(&self, search_type: &SearchType) -> &str {
         type S = SearchType;
         match search_type {
@@ -35,7 +35,7 @@ impl<'a> FuzzyComparable<'a> for User {
 
 impl<'a> FuzzyComparable<'a> for Playlist<'_> {
     fn search_term(&self, _: &SearchType) -> &str {
-        &self.name
+        self.name
     }
 }
 
@@ -44,7 +44,7 @@ impl<'a> FuzzyComparable<'a> for Playlist<'_> {
 // repo
 
 pub(crate) fn fuzzy_search_best_n<'a, T: FuzzyComparable<'a>>(
-    s: &'a str,
+    s: String,
     list: &'a [T],
     n: usize,
     st: &SearchType,
@@ -56,7 +56,7 @@ pub(crate) fn fuzzy_search_best_n<'a, T: FuzzyComparable<'a>>(
 }
 
 pub(crate) fn fuzzy_search_sorted<'a, T: FuzzyComparable<'a>>(
-    s: &'a str,
+    s: String,
     list: &'a [T],
     st: &SearchType,
 ) -> Vec<(&'a T, f32)> {
@@ -67,13 +67,13 @@ pub(crate) fn fuzzy_search_sorted<'a, T: FuzzyComparable<'a>>(
 
 #[inline]
 pub(crate) fn fuzzy_search<'a, T: FuzzyComparable<'a>>(
-    s: &'a str,
+    s: String,
     list: &'a [T],
     st: &SearchType,
 ) -> Vec<(&'a T, f32)> {
     list.iter()
         .map(|value| {
-            let res = fuzzy_compare(s, value.search_term(st));
+            let res = fuzzy_compare(&s, value.search_term(st));
             (value, res)
         })
         .collect()

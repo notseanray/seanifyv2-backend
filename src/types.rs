@@ -3,7 +3,7 @@ use crate::{
     CONFIG,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::query;
+use sqlx::{query, query_as, Sqlite, Pool, pool::PoolConnection};
 use std::{collections::VecDeque, fs, process::{Command, self}};
 use derive_more::Display;
 
@@ -179,13 +179,13 @@ impl From<UserFromDB> for User {
 }
 
 #[derive(Serialize)]
-pub(crate) struct Song<'a> {
-    pub(crate) id: &'a str,
+pub(crate) struct Song {
+    pub(crate) id: String,
     pub(crate) title: String,
     pub(crate) artist: String,
     pub(crate) album: String,
     pub(crate) duration: f64,
-    pub(crate) year: u16,
+    pub(crate) year: i64,
     pub(crate) genre: String,
     pub(crate) added_by: String,
     pub(crate) default_search: String,
@@ -198,7 +198,7 @@ enum SongError {
 }
 
 type SE = SongError;
-impl <'a>Song<'a> {
+impl <'a>Song {
     fn get_id(url: &'a str) -> Option<&'a str> {
         let id = url.find("?v=");
         if let Some(v) = id {
@@ -213,7 +213,7 @@ impl <'a>Song<'a> {
         None
     }
 // yt-dlp --socket-timeout 3 --embed-thumbnail --audio-format mp3 --extract-audio --output "M3HhNcl2dMA.%(ext)s" --add-metadata https://www.youtube.com/watch\?v\=M3HhNcl2dMA
-    pub(crate) async fn from_url(url: &'a str, user: String) -> Option<Song<'a>> {
+    pub(crate) async fn from_url(url: &'a str, user: String, db: &mut PoolConnection<Sqlite>) -> Option<Song> {
         if let Some(v) = Self::get_id(url) {
             let _ = fs::create_dir_all("./songs");
             let mut cmd = Command::new("yt-dlp");
@@ -230,7 +230,7 @@ impl <'a>Song<'a> {
                 url,
             ]);
             let cmd = cmd.output().expect("yt dlp not installed");
-            if cmd.status.success() && Self::insert(v, user).await.is_ok() {
+            if cmd.status.success() && Self::insert(v, user, db).await.is_ok() {
                 // ws msg
             }
 
@@ -238,27 +238,21 @@ impl <'a>Song<'a> {
         unimplemented!();
     }
     // pass in db handle from from_url
-    async fn insert(id: &str, user: String) -> Result<(), SongError> {
+    async fn insert(id: &str, user: String, db: &mut PoolConnection<Sqlite>) -> Result<(), SongError> {
         let meta = mp3_metadata::read_from_file(format!("songs/{id}.mp3")).unwrap();
         if let Some(tag) = meta.tag {
-            println!("title: {}", tag.title);
-            println!("artist: {}", tag.artist);
-            println!("album: {}", tag.album);
-            println!("year: {}", tag.year);
-            println!("comment: {}", tag.comment);
-            println!("genre: {:?}", tag.genre);
             let new_song = Self {
                 default_search: format!("{} {} {}", &tag.title, &tag.artist, &tag.album),
-                id,
+                id: id.to_string(),
                 title: tag.title,
                 artist: tag.artist,
                 album: tag.album,
                 duration: meta.duration.as_secs_f64(),
-                year: tag.year,
+                year: tag.year as i64,
                 genre: format!("{:?}", tag.genre),
                 added_by: user,
             };
-            // query!("INSERT INTO songs VALUES $1", new_song).execute();
+            // query!("INSERT INTO songs VALUES $1", new_song).execute(db);
             Ok(())
         } else {
             Err(SE::MetadataExtractionFailture)
@@ -266,24 +260,31 @@ impl <'a>Song<'a> {
     }
 }
 
-pub(crate) struct SongSearch<'a> {
-    songs: &'a Vec<Song<'a>>,
+pub(crate) struct SongSearch {
+    songs: Vec<Song>,
 }
 
-// might not need wrapper type for serialization
-#[derive(Serialize)]
-pub(crate) struct SearchResult<'a>(Vec<(&'a Song<'a>, f32)>);
 
-impl <'a>SongSearch<'a> {
-    pub(crate) fn load() {}
-    pub(crate) fn update() {}
+type SongList<'a> = Vec<Song>;
+
+impl SongSearch {
+    pub(crate) async fn load(db: &mut PoolConnection<Sqlite>) -> Self {
+        let songs: Vec<Song> = query_as!(Song, "select * from songs").fetch_all(db).await.unwrap();
+        Self {
+            songs
+        }
+    }
+    pub(crate) async fn update(&mut self, db: &mut PoolConnection<Sqlite>) {
+        let songs: Vec<Song> = query_as!(Song, "select * from songs").fetch_all(db).await.unwrap();
+        self.songs = songs;
+    }
     pub(crate) fn search(
         &self,
-        term: &'a str,
+        term: String,
         search_type: SearchType,
         amount: usize,
-    ) -> SearchResult<'a> {
-        SearchResult(fuzzy_search_best_n(term, self.songs, amount, &search_type))
+    ) -> Vec<(&Song, f32)> {
+        fuzzy_search_best_n(term, &self.songs, amount, &search_type)
     }
 }
 
@@ -297,4 +298,7 @@ pub(crate) struct Playlist<'a> {
     pub(crate) cover: Option<String>,
     pub(crate) duration: u64,
     pub(crate) lastupdate: u64,
+}
+
+impl <'a>Playlist<'a> {
 }

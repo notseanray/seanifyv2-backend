@@ -5,12 +5,12 @@ mod middlewares;
 mod types;
 
 use actix_cors::Cors;
-use actix_web::{App, HttpServer};
+use actix_web::{App, HttpServer, Scope};
 use dotenv::dotenv;
 
 use crate::types::Config;
 use actix::{Actor, StreamHandler};
-use actix_web::{web, Error as ActixError, HttpRequest, HttpResponse};
+use actix_web::{web, Error as ActixError, HttpRequest, HttpResponse, get};
 use actix_web_actors::ws;
 use lazy_static::lazy_static;
 use log::{error, info};
@@ -46,10 +46,32 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for Ws {
     }
 }
 
+#[get("/next")]
 async fn next_song(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, ActixError> {
     let resp = ws::start(Ws {}, &req, stream);
     println!("{:?}", resp);
     resp
+}
+
+#[get("/prev")]
+async fn previous_song(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, ActixError> {
+    let resp = ws::start(Ws {}, &req, stream);
+    println!("{:?}", resp);
+    resp
+}
+
+#[get("/playpause")]
+async fn play_pause(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, ActixError> {
+    let resp = ws::start(Ws {}, &req, stream);
+    println!("{:?}", resp);
+    resp
+}
+
+fn ws_routes() -> Scope {
+    web::scope("/ws")
+        .service(next_song)
+        .service(previous_song)
+        .service(play_pause)
 }
 
 #[actix_web::main]
@@ -71,7 +93,9 @@ async fn main() -> std::io::Result<()> {
             .wrap(middlewares::err_handlers())
             .wrap(middlewares::security_headers())
             .wrap(middlewares::logger())
-            .service(api::users_routes())
+            .service(ws_routes())
+            .service(api::routes::general_routes())
+            .service(api::users::routes())
     })
     .bind((&*CONFIG.host, CONFIG.port))?
     .run()
