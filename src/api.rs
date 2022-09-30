@@ -28,3 +28,13 @@ macro_rules! response {
         })
     };
 }
+
+#[macro_export]
+macro_rules! time {
+    () => {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(Duration::from_secs(0))
+            .as_secs()
+    };
+}

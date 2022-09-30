@@ -1,5 +1,5 @@
 use super::users;
-use crate::{Database, BRANCH, VERSION};
+use crate::{Database, BRANCH, VERSION, time};
 use std::time::{UNIX_EPOCH, SystemTime, Duration};
 use actix_web::Scope;
 use actix_web::{
@@ -14,10 +14,7 @@ use crate::api::types::{Metadata, Message};
 pub async fn ping() -> impl Responder {
     response!(format!(
         "{:?}",
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or(Duration::from_secs(0))
-            .as_millis()
+        time!()
     ))
 }
 pub fn general_routes() -> Scope {

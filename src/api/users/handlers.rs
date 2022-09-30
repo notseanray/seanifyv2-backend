@@ -1,7 +1,7 @@
 use crate::api::types::{Metadata, Message};
 use crate::extractors::Claims;
 use crate::types::{User, UserFromDB};
-use crate::{Database, BRANCH, VERSION};
+use crate::{Database, BRANCH, VERSION, time};
 use actix_web::{HttpRequest, HttpResponse};
 use actix_web::{
     get,
@@ -10,7 +10,10 @@ use actix_web::{
 };
 use sqlx::{query, query_as};
 use crate::{fetch_db, response};
+use std::collections::VecDeque;
 use std::sync::Mutex;
+use std::time::{UNIX_EPOCH, SystemTime, Duration};
+
 
 // #[get("/admin")]
 // pub async fn admin(claims: Claims) -> impl Responder {
@@ -65,15 +68,26 @@ pub async fn user_self(req: HttpRequest, claims: Claims) -> impl Responder {
 #[get("/new")]
 pub async fn user_new(claims: Claims, req: HttpRequest) -> impl Responder {
     if let Some(v) = req.headers().get("Data") {
+        // decode string first
         let data: User = serde_json::from_str(v.to_str().unwrap()).unwrap();
-
+        let mut db = fetch_db!(req);
+        let data = User {
+            id: claims.sub,
+            last_played: VecDeque::new(),
+            followers: vec![],
+            following: vec![],
+            lastupdate: time!(),
+            ..data
+        };
+        let data: UserFromDB = data.into();
+        let _ = query!("insert into users(id, username, serverside, thumbnails, autoplay, allow_followers, public_account, activity, last_played, display_name, followers, following, analytics, lastupdate) values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)", data.id, data.username, data.serverside, data.thumbnails, data.autoplay, data.allow_followers, data.public_account, data.activity, data.last_played, data.display_name, data.followers, data.following, data.analytics, data.lastupdate).execute(&mut db).await;
     }
     web::Json(Message {
         metadata: Metadata {
             api: VERSION.to_owned(),
             branch: BRANCH.to_owned(),
         },
-        text: format!("This is an admin message. {}", claims.sub),
+        text: format!("created new user"),
     })
 }
 
@@ -82,16 +96,41 @@ pub async fn edit(claims: Claims, req: HttpRequest) -> impl Responder {
     "test".to_string()
 }
 
-#[get("/follow")]
-pub async fn follow(claims: Claims, req: HttpRequest) -> impl Responder {
-    "test".to_string()
+#[get("/follow/{user}")]
+pub async fn follow(claims: Claims, user: web::Path<String>, req: HttpRequest) -> impl Responder {
+    let mut db = fetch_db!(req);
+    let result = query_as!(UserFromDB, "select * from users where id == $1", claims.sub)
+        .fetch_optional(&mut db)
+        .await;
+    if let Ok(Some(v)) = result {
+        let updated = UserFromDB::follow(&v.followers, &user);
+        return if query!("update users set followers = $1 where id = $2", updated, claims.sub).fetch_optional(&mut db).await.is_ok() {
+            HttpResponse::Ok()
+        } else {
+            HttpResponse::BadRequest()
+        }
+    }
+    HttpResponse::BadRequest()
 }
 
-#[get("/unfollow")]
-pub async fn unfollow(claims: Claims, req: HttpRequest) -> impl Responder {
-    "test".to_string()
+#[get("/unfollow/{user}")]
+pub async fn unfollow(claims: Claims, user: web::Path<String>, req: HttpRequest) -> impl Responder {
+    let mut db = fetch_db!(req);
+    let result = query_as!(UserFromDB, "select * from users where id == $1", claims.sub)
+        .fetch_optional(&mut db)
+        .await;
+    if let Ok(Some(v)) = result {
+        let updated = UserFromDB::unfollow(&v.followers, &user);
+        return if query!("update users set followers = $1 where id = $2", updated, claims.sub).fetch_optional(&mut db).await.is_ok() {
+            HttpResponse::Ok()
+        } else {
+            HttpResponse::BadRequest()
+        }
+    }
+    HttpResponse::BadRequest()
 }
 
+// TODO UPDATE SCHEMA
 #[get("/toptracks")]
 pub async fn toptracks(claims: Claims, req: HttpRequest) -> impl Responder {
     "test".to_string()

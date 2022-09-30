@@ -178,17 +178,52 @@ impl From<UserFromDB> for User {
     }
 }
 
+impl From<User> for UserFromDB {
+    fn from(u: User) -> Self {
+        let lp: Vec<String> = u.last_played.into();
+        Self {
+            id: u.id,
+            username: u.username,
+            serverside: u.serverside,
+            thumbnails: u.thumbnails,
+            autoplay: u.autoplay,
+            allow_followers: u.allow_followers,
+            public_account: u.public_account,
+            activity: u.activity,
+            last_played: lp.join("`"),
+            display_name: u.display_name,
+            followers: u.followers.join("`"),
+            following: u.following.join("`"),
+            analytics: u.analytics,
+            lastupdate: u.lastupdate.to_string(),
+        }
+    }
+}
+
 impl UserFromDB {
     pub(crate) fn now_playing(previous: &str, new_song: &str) -> String {
         let cut = previous.find('`');
         if let Some(v) = cut {
-            return if previous.matches('`').count() >= 20 {
+            return if previous.matches('`').count() >= CONFIG.max_last_played {
                 format!("{}`{new_song}", &previous[(v + 1)..])
             } else {
                 format!("`{}{new_song}", previous)
             }
         }
         previous.into()
+    }
+    pub(crate) fn follow(previous: &str, follower: &str) -> String {
+        format!("{previous}`{follower}")
+    }
+    pub(crate) fn unfollow(previous: &str, unfollower: &str) -> String {
+        let mut new = previous.replace(unfollower, "").replace("``", "`");
+        if new.starts_with('`') && new.len() > 1 {
+            new = new[1..].to_string();
+        }
+        if new.ends_with('`') && new.len() > 1 {
+            new = new[..new.len() - 1].to_string();
+        }
+        new
     }
 }
 
@@ -277,9 +312,6 @@ impl <'a>Song {
 pub(crate) struct SongSearch {
     songs: Vec<Song>,
 }
-
-
-type SongList<'a> = Vec<Song>;
 
 impl SongSearch {
     pub(crate) async fn load(db: &mut PoolConnection<Sqlite>) -> Self {
