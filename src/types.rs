@@ -117,12 +117,12 @@ pub(crate) struct User {
 }
 
 impl User {
-    pub(crate) fn now_playing(&mut self, id: String) {
-        if self.last_played.len() > CONFIG.max_last_played {
-            let _ = self.last_played.pop_back();
-        }
-        self.last_played.push_front(id);
-    }
+    // pub(crate) fn now_playing(&mut self, id: String) {
+        // if self.last_played.len() > CONFIG.max_last_played {
+        //     let _ = self.last_played.pop_back();
+        // }
+        // self.last_played.push_front(id);
+    // }
     // pub(crate) fn update_user(&mut self, jjjjjjj)
 }
 
@@ -175,6 +175,20 @@ impl From<UserFromDB> for User {
             analytics: u.analytics,
             lastupdate: u.lastupdate.parse().unwrap_or(0),
         }
+    }
+}
+
+impl UserFromDB {
+    pub(crate) fn now_playing(previous: &str, new_song: &str) -> String {
+        let cut = previous.find('`');
+        if let Some(v) = cut {
+            return if previous.matches('`').count() >= 20 {
+                format!("{}`{new_song}", &previous[(v + 1)..])
+            } else {
+                format!("`{}{new_song}", previous)
+            }
+        }
+        previous.into()
     }
 }
 

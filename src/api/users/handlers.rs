@@ -2,7 +2,7 @@ use crate::api::types::{Metadata, Message};
 use crate::extractors::Claims;
 use crate::types::{User, UserFromDB};
 use crate::{Database, BRANCH, VERSION};
-use actix_web::HttpRequest;
+use actix_web::{HttpRequest, HttpResponse};
 use actix_web::{
     get,
     web::{self, Data},
@@ -66,7 +66,7 @@ pub async fn user_self(req: HttpRequest, claims: Claims) -> impl Responder {
 pub async fn user_new(claims: Claims, req: HttpRequest) -> impl Responder {
     if let Some(v) = req.headers().get("Data") {
         let data: User = serde_json::from_str(v.to_str().unwrap()).unwrap();
-        
+
     }
     web::Json(Message {
         metadata: Metadata {
@@ -102,7 +102,19 @@ pub async fn profile(claims: Claims, req: HttpRequest) -> impl Responder {
     "test".to_string()
 }
 
-#[get("/listen")]
-pub async fn listen(claims: Claims, req: HttpRequest) -> impl Responder {
-    "test".to_string()
+#[get("/listen/{song}")]
+pub async fn listen(claims: Claims, song: web::Path<String>, req: HttpRequest) -> impl Responder {
+    let mut db = fetch_db!(req);
+    let result = query_as!(UserFromDB, "select * from users where id == $1", claims.sub)
+        .fetch_optional(&mut db)
+        .await;
+    if let Ok(Some(v)) = result {
+        let updated = UserFromDB::now_playing(&v.last_played, &song);
+        return if query!("update users set last_played = $1 where id = $2", updated, claims.sub).fetch_optional(&mut db).await.is_ok() {
+            HttpResponse::Ok()
+        } else {
+            HttpResponse::BadRequest()
+        }
+    }
+    HttpResponse::BadRequest()
 }
