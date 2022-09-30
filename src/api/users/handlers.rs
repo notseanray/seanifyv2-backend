@@ -1,19 +1,18 @@
-use crate::api::types::{Metadata, Message};
+use crate::api::types::{Message, Metadata};
 use crate::extractors::Claims;
 use crate::types::{User, UserFromDB};
-use crate::{Database, BRANCH, VERSION, time};
-use actix_web::{HttpRequest, HttpResponse};
+use crate::{fetch_db, response};
+use crate::{time, Database, BRANCH, VERSION};
 use actix_web::{
     get,
     web::{self, Data},
     Responder,
 };
+use actix_web::{HttpRequest, HttpResponse};
 use sqlx::{query, query_as};
-use crate::{fetch_db, response};
 use std::collections::VecDeque;
 use std::sync::Mutex;
-use std::time::{UNIX_EPOCH, SystemTime, Duration};
-
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 // #[get("/admin")]
 // pub async fn admin(claims: Claims) -> impl Responder {
@@ -29,7 +28,6 @@ pub async fn protected(claims: Claims) -> impl Responder {
 pub async fn public() -> impl Responder {
     response!(format!("public"))
 }
-
 
 // pub(crate) async check_taken()
 
@@ -104,11 +102,19 @@ pub async fn follow(claims: Claims, user: web::Path<String>, req: HttpRequest) -
         .await;
     if let Ok(Some(v)) = result {
         let updated = UserFromDB::follow(&v.followers, &user);
-        return if query!("update users set followers = $1 where id = $2", updated, claims.sub).fetch_optional(&mut db).await.is_ok() {
+        return if query!(
+            "update users set followers = $1 where id = $2",
+            updated,
+            claims.sub
+        )
+        .fetch_optional(&mut db)
+        .await
+        .is_ok()
+        {
             HttpResponse::Ok()
         } else {
             HttpResponse::BadRequest()
-        }
+        };
     }
     HttpResponse::BadRequest()
 }
@@ -121,11 +127,19 @@ pub async fn unfollow(claims: Claims, user: web::Path<String>, req: HttpRequest)
         .await;
     if let Ok(Some(v)) = result {
         let updated = UserFromDB::unfollow(&v.followers, &user);
-        return if query!("update users set followers = $1 where id = $2", updated, claims.sub).fetch_optional(&mut db).await.is_ok() {
+        return if query!(
+            "update users set followers = $1 where id = $2",
+            updated,
+            claims.sub
+        )
+        .fetch_optional(&mut db)
+        .await
+        .is_ok()
+        {
             HttpResponse::Ok()
         } else {
             HttpResponse::BadRequest()
-        }
+        };
     }
     HttpResponse::BadRequest()
 }
@@ -149,11 +163,19 @@ pub async fn listen(claims: Claims, song: web::Path<String>, req: HttpRequest) -
         .await;
     if let Ok(Some(v)) = result {
         let updated = UserFromDB::now_playing(&v.last_played, &song);
-        return if query!("update users set last_played = $1 where id = $2", updated, claims.sub).fetch_optional(&mut db).await.is_ok() {
+        return if query!(
+            "update users set last_played = $1 where id = $2",
+            updated,
+            claims.sub
+        )
+        .fetch_optional(&mut db)
+        .await
+        .is_ok()
+        {
             HttpResponse::Ok()
         } else {
             HttpResponse::BadRequest()
-        }
+        };
     }
     HttpResponse::BadRequest()
 }

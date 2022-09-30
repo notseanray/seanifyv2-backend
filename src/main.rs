@@ -10,7 +10,7 @@ use dotenv::dotenv;
 
 use crate::types::Config;
 use actix::{Actor, StreamHandler};
-use actix_web::{web, Error as ActixError, HttpRequest, HttpResponse, get};
+use actix_web::{get, web, Error as ActixError, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
 use lazy_static::lazy_static;
 use log::{error, info};

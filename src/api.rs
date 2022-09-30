@@ -1,7 +1,7 @@
+pub mod playlist;
 pub mod routes;
 mod types;
 pub mod users;
-pub mod playlist;
 
 #[macro_export]
 macro_rules! fetch_db {

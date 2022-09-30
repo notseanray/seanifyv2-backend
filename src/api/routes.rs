@@ -1,23 +1,19 @@
 use super::users;
-use crate::{Database, BRANCH, VERSION, time};
-use std::time::{UNIX_EPOCH, SystemTime, Duration};
+use crate::api::types::{Message, Metadata};
+use crate::response;
+use crate::{time, Database, BRANCH, VERSION};
 use actix_web::Scope;
 use actix_web::{
     get,
     web::{self, Data},
     Responder,
 };
-use crate::response;
-use crate::api::types::{Metadata, Message};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[get("/ping")]
 pub async fn ping() -> impl Responder {
-    response!(format!(
-        "{:?}",
-        time!()
-    ))
+    response!(format!("{:?}", time!()))
 }
 pub fn general_routes() -> Scope {
-    web::scope("/")
-        .service(ping)
+    web::scope("/").service(ping)
 }

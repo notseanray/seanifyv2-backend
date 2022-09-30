@@ -1,4 +1,3 @@
-
 use crate::extractors::Claims;
 use actix_web::HttpRequest;
 use actix_web::{
@@ -34,13 +33,21 @@ pub async fn playlist_user_data(username: web::Path<String>, claims: Claims) -> 
 }
 
 #[get("/{username}/{playlist_name}/hash")]
-pub async fn playlist_hash(username: web::Path<String>, playlist_name: web::Path<String>, claims: Claims) -> impl Responder {
+pub async fn playlist_hash(
+    username: web::Path<String>,
+    playlist_name: web::Path<String>,
+    claims: Claims,
+) -> impl Responder {
     // response!(format!("admin message {}", claims.sub))
     "test".to_string()
 }
 
 #[get("/{username}/{playlist_name}/data")]
-pub async fn playlist_data(username: web::Path<String>, playlist_name: web::Path<String>, claims: Claims) -> impl Responder {
+pub async fn playlist_data(
+    username: web::Path<String>,
+    playlist_name: web::Path<String>,
+    claims: Claims,
+) -> impl Responder {
     // response!(format!("admin message {}", claims.sub))
     "test".to_string()
 }

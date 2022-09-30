@@ -1,6 +1,6 @@
 use std::iter;
 
-use crate::types::{Song, User, Playlist};
+use crate::types::{Playlist, Song, User};
 
 pub(crate) enum SearchType {
     Artist,

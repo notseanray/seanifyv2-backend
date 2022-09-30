@@ -2,10 +2,14 @@ use crate::{
     fuzzy::{fuzzy_search_best_n, SearchType},
     CONFIG,
 };
-use serde::{Deserialize, Serialize};
-use sqlx::{query, query_as, Sqlite, Pool, pool::PoolConnection};
-use std::{collections::VecDeque, fs, process::{Command, self}};
 use derive_more::Display;
+use serde::{Deserialize, Serialize};
+use sqlx::{pool::PoolConnection, query, query_as, Pool, Sqlite};
+use std::{
+    collections::VecDeque,
+    fs,
+    process::{self, Command},
+};
 
 // The number of songs that we report back with last played
 // const LAST_PLAYED_LENGTH: usize = 30;
@@ -118,10 +122,10 @@ pub(crate) struct User {
 
 impl User {
     // pub(crate) fn now_playing(&mut self, id: String) {
-        // if self.last_played.len() > CONFIG.max_last_played {
-        //     let _ = self.last_played.pop_back();
-        // }
-        // self.last_played.push_front(id);
+    // if self.last_played.len() > CONFIG.max_last_played {
+    //     let _ = self.last_played.pop_back();
+    // }
+    // self.last_played.push_front(id);
     // }
     // pub(crate) fn update_user(&mut self, jjjjjjj)
 }
@@ -208,7 +212,7 @@ impl UserFromDB {
                 format!("{}`{new_song}", &previous[(v + 1)..])
             } else {
                 format!("`{}{new_song}", previous)
-            }
+            };
         }
         previous.into()
     }
@@ -247,7 +251,7 @@ enum SongError {
 }
 
 type SE = SongError;
-impl <'a>Song {
+impl<'a> Song {
     fn get_id(url: &'a str) -> Option<&'a str> {
         let id = url.find("?v=");
         if let Some(v) = id {
@@ -261,8 +265,12 @@ impl <'a>Song {
         }
         None
     }
-// yt-dlp --socket-timeout 3 --embed-thumbnail --audio-format mp3 --extract-audio --output "M3HhNcl2dMA.%(ext)s" --add-metadata https://www.youtube.com/watch\?v\=M3HhNcl2dMA
-    pub(crate) async fn from_url(url: &'a str, user: String, db: &mut PoolConnection<Sqlite>) -> Option<Song> {
+    // yt-dlp --socket-timeout 3 --embed-thumbnail --audio-format mp3 --extract-audio --output "M3HhNcl2dMA.%(ext)s" --add-metadata https://www.youtube.com/watch\?v\=M3HhNcl2dMA
+    pub(crate) async fn from_url(
+        url: &'a str,
+        user: String,
+        db: &mut PoolConnection<Sqlite>,
+    ) -> Option<Song> {
         if let Some(v) = Self::get_id(url) {
             let _ = fs::create_dir_all("./songs");
             let mut cmd = Command::new("yt-dlp");
@@ -282,12 +290,15 @@ impl <'a>Song {
             if cmd.status.success() && Self::insert(v, user, db).await.is_ok() {
                 // ws msg
             }
-
         }
         unimplemented!();
     }
     // pass in db handle from from_url
-    async fn insert(id: &str, user: String, db: &mut PoolConnection<Sqlite>) -> Result<(), SongError> {
+    async fn insert(
+        id: &str,
+        user: String,
+        db: &mut PoolConnection<Sqlite>,
+    ) -> Result<(), SongError> {
         let meta = mp3_metadata::read_from_file(format!("songs/{id}.mp3")).unwrap();
         if let Some(tag) = meta.tag {
             let new_song = Self {
@@ -315,13 +326,17 @@ pub(crate) struct SongSearch {
 
 impl SongSearch {
     pub(crate) async fn load(db: &mut PoolConnection<Sqlite>) -> Self {
-        let songs: Vec<Song> = query_as!(Song, "select * from songs").fetch_all(db).await.unwrap();
-        Self {
-            songs
-        }
+        let songs: Vec<Song> = query_as!(Song, "select * from songs")
+            .fetch_all(db)
+            .await
+            .unwrap();
+        Self { songs }
     }
     pub(crate) async fn update(&mut self, db: &mut PoolConnection<Sqlite>) {
-        let songs: Vec<Song> = query_as!(Song, "select * from songs").fetch_all(db).await.unwrap();
+        let songs: Vec<Song> = query_as!(Song, "select * from songs")
+            .fetch_all(db)
+            .await
+            .unwrap();
         self.songs = songs;
     }
     pub(crate) fn search(
@@ -346,5 +361,4 @@ pub(crate) struct Playlist<'a> {
     pub(crate) lastupdate: u64,
 }
 
-impl <'a>Playlist<'a> {
-}
+impl<'a> Playlist<'a> {}
