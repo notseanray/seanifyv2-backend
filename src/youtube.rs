@@ -1,6 +1,9 @@
-use std::{fs::{self, File}, io::Write};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::{
+    fs::{self, File},
+    io::Write,
+};
 
 #[derive(Deserialize, Serialize)]
 pub(crate) struct VideoData {
@@ -31,7 +34,9 @@ impl VideoData {
     pub(crate) fn load_and_replace(id: &str) -> Result<Self> {
         let full = Self::from_yt_file(id)?;
         let d = serde_json::to_string(&full)?;
-        let mut f = File::options().write(true).open(format!("songs/{id}.info.json"))?;
+        let mut f = File::options()
+            .write(true)
+            .open(format!("songs/{id}.info.json"))?;
         f.set_len(d.len() as u64)?;
         f.write_all(d.as_bytes())?;
         Ok(full)

@@ -1,5 +1,6 @@
 pub mod playlist;
 pub mod routes;
+pub mod songs;
 mod types;
 pub mod users;
 
@@ -37,4 +38,8 @@ macro_rules! time {
             .unwrap_or(Duration::from_secs(0))
             .as_secs()
     };
+}
+
+pub(crate) struct BoolResult {
+    admin: bool,
 }

@@ -1,7 +1,9 @@
 use crate::{
     fuzzy::{fuzzy_search_best_n, SearchType},
-    CONFIG, youtube::VideoData,
+    youtube::VideoData,
+    CONFIG,
 };
+use anyhow::{anyhow, Result};
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use sqlx::{pool::PoolConnection, query, query_as, Pool, Sqlite};
@@ -10,7 +12,6 @@ use std::{
     fs,
     process::{self, Command},
 };
-use anyhow::{Result, anyhow};
 
 // The number of songs that we report back with last played
 // const LAST_PLAYED_LENGTH: usize = 30;
@@ -118,6 +119,7 @@ pub(crate) struct User {
     pub(crate) following: Vec<String>,
     // count to playback statistics
     pub(crate) analytics: bool,
+    pub(crate) admin: bool,
     pub(crate) lastupdate: u64,
 }
 
@@ -159,6 +161,7 @@ pub(crate) struct UserFromDB {
     pub(crate) following: String,
     // count to playback statistics
     pub(crate) analytics: bool,
+    pub(crate) admin: bool,
     pub(crate) lastupdate: String,
 }
 
@@ -178,6 +181,7 @@ impl From<UserFromDB> for User {
             followers: u.followers.split('`').map(|x| x.into()).collect(),
             following: u.following.split('`').map(|x| x.into()).collect(),
             analytics: u.analytics,
+            admin: u.admin,
             lastupdate: u.lastupdate.parse().unwrap_or(0),
         }
     }
@@ -200,6 +204,7 @@ impl From<User> for UserFromDB {
             followers: u.followers.join("`"),
             following: u.following.join("`"),
             analytics: u.analytics,
+            admin: u.admin,
             lastupdate: u.lastupdate.to_string(),
         }
     }
@@ -328,11 +333,7 @@ impl<'a> Song {
         unimplemented!();
     }
     // pass in db handle from from_url
-    async fn insert(
-        id: &str,
-        user: String,
-        db: &mut PoolConnection<Sqlite>,
-    ) -> Result<()> {
+    async fn insert(id: &str, user: String, db: &mut PoolConnection<Sqlite>) -> Result<()> {
         let meta = match mp3_metadata::read_from_file(format!("songs/{id}.mp3")) {
             Ok(v) => v,
             _ => return Err(anyhow!("Failed to extract metadata")),

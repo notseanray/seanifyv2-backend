@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users
     followers       TEXT             NOT NULL,
     following       TEXT             NOT NULL,
     analytics       BOOLEAN          NOT NULL,
+    admin           BOOLEAN          NOT NULL,
     lastupdate      TEXT             NOT NULL,
     PRIMARY KEY(id, username)
 );

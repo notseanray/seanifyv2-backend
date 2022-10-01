@@ -2,6 +2,7 @@ use crate::api::types::{Message, Metadata};
 use crate::extractors::Claims;
 use crate::types::{User, UserFromDB};
 use crate::{fetch_db, response};
+use crate::api::BoolResult;
 use crate::{time, Database, BRANCH, VERSION};
 use actix_web::{
     get,
@@ -9,7 +10,8 @@ use actix_web::{
     Responder,
 };
 use actix_web::{HttpRequest, HttpResponse};
-use sqlx::{query, query_as, pool::PoolConnection, Sqlite};
+use reqwest::StatusCode;
+use sqlx::{pool::PoolConnection, query, query_as, Sqlite};
 use std::collections::VecDeque;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -29,7 +31,10 @@ pub async fn public() -> impl Responder {
     response!(format!("public"))
 }
 
-pub(crate) async fn is_username_taken(b64_username: &[u8], db: &mut PoolConnection<Sqlite>) -> bool {
+pub(crate) async fn is_username_taken(
+    b64_username: &[u8],
+    db: &mut PoolConnection<Sqlite>,
+) -> bool {
     let decoded = match base64::decode(b64_username) {
         Ok(v) => v,
         Err(_) => return false,
@@ -44,24 +49,12 @@ pub(crate) async fn is_username_taken(b64_username: &[u8], db: &mut PoolConnecti
 #[get("/taken")]
 pub(crate) async fn user_taken(req: HttpRequest) -> impl Responder {
     if let Some(v) = req.headers().get("data") {
-        // let decoded = match base64::decode(v) {
-        //     Ok(v) => v,
-        //     Err(_) => return response!("invalid base64"),
-        // };
-        // let mut db = fetch_db!(req);
-        // let decoded = String::from_utf8_lossy(&decoded);
-        // let result = query!("select * from users where username == $1", decoded)
-        //     .fetch_optional(&mut db)
-        //     .await;
-        // if let Ok(Some(v)) = result {
-        //     return response!(format!("{:?}", v));
-        // }
         let mut db = fetch_db!(req);
         return if is_username_taken(v.as_bytes(), &mut db).await {
             response!("taken")
         } else {
             response!("not taken")
-        }
+        };
     }
     response!("not taken")
 }
@@ -94,6 +87,7 @@ pub async fn user_new(claims: Claims, req: HttpRequest) -> impl Responder {
             followers: vec![],
             following: vec![],
             lastupdate: time!(),
+            admin: false,
             ..data
         };
         let data: UserFromDB = data.into();
@@ -111,16 +105,23 @@ pub async fn edit(claims: Claims, req: HttpRequest) -> impl Responder {
         if is_username_taken(data.username.as_bytes(), &mut db).await {
             return response!("failed to create new user");
         }
-        let data = User {
-            id: claims.sub,
-            last_played: VecDeque::new(),
-            followers: vec![],
-            following: vec![],
-            lastupdate: time!(),
-            ..data
-        };
-        let data: UserFromDB = data.into();
-        let _ = query!("insert into users(id, username, serverside, thumbnails, autoplay, allow_followers, public_account, activity, last_played, display_name, followers, following, analytics, lastupdate) values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)", data.id, data.username, data.serverside, data.thumbnails, data.autoplay, data.allow_followers, data.public_account, data.activity, data.last_played, data.display_name, data.followers, data.following, data.analytics, data.lastupdate).execute(&mut db).await;
+        let result = query_as!(UserFromDB, "select * from users where id == $1", claims.sub)
+            .fetch_optional(&mut db)
+            .await;
+        if let Ok(Some(v)) = result {
+            let formated: User = v.into();
+            let data = User {
+                id: claims.sub,
+                last_played: VecDeque::new(),
+                followers: formated.followers,
+                following: formated.following,
+                lastupdate: time!(),
+                admin: formated.admin,
+                ..data
+            };
+            let data: UserFromDB = data.into();
+            let _ = query!("insert into users(id, username, serverside, thumbnails, autoplay, allow_followers, public_account, activity, last_played, display_name, followers, following, analytics, lastupdate) values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)", data.id, data.username, data.serverside, data.thumbnails, data.autoplay, data.allow_followers, data.public_account, data.activity, data.last_played, data.display_name, data.followers, data.following, data.analytics, data.lastupdate).execute(&mut db).await;
+        }
     }
     response!("done")
 }
@@ -175,10 +176,30 @@ pub async fn unfollow(claims: Claims, user: web::Path<String>, req: HttpRequest)
     HttpResponse::BadRequest()
 }
 
-// TODO UPDATE SCHEMA
-#[get("/toptracks")]
-pub async fn toptracks(claims: Claims, req: HttpRequest) -> impl Responder {
-    "test".to_string()
+#[get("/delete")]
+pub async fn delete(claims: Claims, req: HttpRequest) -> impl Responder {
+    let mut db = fetch_db!(req);
+    if query!("delete from users where id = $1", claims.sub).execute(&mut db).await.is_ok() {
+        HttpResponse::new(StatusCode::OK)
+    } else {
+        HttpResponse::new(StatusCode::SERVICE_UNAVAILABLE)
+    }
+}
+
+#[get("/delete/{username}")]
+pub async fn delete_user(claims: Claims, username: web::Path<String>, req: HttpRequest) -> impl Responder {
+    let username = username.to_string();
+    let mut db = fetch_db!(req);
+    if let Ok(Some(v)) = query_as!(BoolResult, "select admin from users where id == $1 and admin == true", claims.sub).fetch_optional(&mut db).await {
+        if v.admin {
+            return if query!("delete from users where username = $1", username).execute(&mut db).await.is_ok() {
+                HttpResponse::new(StatusCode::OK)
+            } else {
+                HttpResponse::new(StatusCode::SERVICE_UNAVAILABLE)
+            }
+        }
+    }
+    HttpResponse::new(StatusCode::SERVICE_UNAVAILABLE)
 }
 
 #[get("/listen/{song}")]
