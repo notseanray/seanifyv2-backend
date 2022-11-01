@@ -5,6 +5,7 @@ use actix_web::{
     web::{self, Data},
     Responder,
 };
+use async_once::AsyncOnce;
 
 use sqlx::{query, query_as};
 
@@ -21,12 +22,6 @@ pub async fn playlist_delete(claims: Claims) -> impl Responder {
 }
 
 #[get("/{username}")]
-pub async fn playlist(username: web::Path<String>, claims: Claims) -> impl Responder {
-    // response!(format!("admin message {}", claims.sub))
-    "test".to_string()
-}
-
-#[get("/{username}/data")]
 pub async fn playlist_user_data(username: web::Path<String>, claims: Claims) -> impl Responder {
     // response!(format!("admin message {}", claims.sub))
     "test".to_string()

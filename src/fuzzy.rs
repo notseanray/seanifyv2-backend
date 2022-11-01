@@ -31,9 +31,9 @@ impl<'a> FuzzyComparable<'a> for User {
     }
 }
 
-impl<'a> FuzzyComparable<'a> for Playlist<'_> {
+impl<'a> FuzzyComparable<'a> for Playlist {
     fn search_term(&self, _: &SearchType) -> &str {
-        self.name
+        &self.name
     }
 }
 

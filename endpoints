@@ -1,0 +1,71 @@
+Playlist
+    new
+     validate
+     db insert
+
+    delete
+     db remove
+
+    /{username}
+     db fetch
+     json response of playlist names, images, descriptions, likes
+
+    /{username}/{playlist_name}/hash
+     db fetch
+     blake3 hash of all song ids
+
+    /{username}/{playlist_name}/data
+     db fetch
+     json response of all songs
+
+    /{username}/{playlist_name}/like
+     db fetch, db update
+
+    /{username}/{playlist_name}/dislike
+     db fetch, db update
+
+    /{username}/{playlist_name}/add
+     db fetch, db update
+
+    /{username}/{playlist_name}/remove
+     db fetch, db update
+
+    edit
+     db update
+
+Songs
+    new
+     song url
+     db update
+    delete
+     song id
+     db update
+    list
+     db fetch
+     all songs json
+    search
+     fuzzy search n amount
+
+Users
+    listen/{song}
+     db update
+     db update - master play list
+
+    /delete/{username}
+     db update, delete
+    /delete
+     db update, delete
+    /unfollow/{user}
+     db update
+    /follow/{user}
+     db update
+    /edit
+     db update
+    /new
+     db update
+    /self
+     db call
+     json
+    /taken
+     db fetch
+     json

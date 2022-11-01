@@ -10,9 +10,11 @@ use actix_web::{App, HttpServer, Scope};
 use dotenv::dotenv;
 
 use crate::types::Config;
+use crate::types::SongSearch;
 use actix::{Actor, StreamHandler};
 use actix_web::{get, web, Error as ActixError, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
+use async_once::AsyncOnce;
 use lazy_static::lazy_static;
 use log::{error, info};
 use sqlx::{Pool, Sqlite};
@@ -24,6 +26,16 @@ pub(crate) const BRANCH: &str = "main";
 
 lazy_static! {
     pub(crate) static ref CONFIG: Config = Config::default();
+    pub(crate) static ref DB: AsyncOnce<Arc<Database>> = AsyncOnce::new(async {
+        Arc::new(Database {
+            db: Database::setup(env!("DATABASE_URL"), 100)
+                .await
+                .expect("failed to check database url"),
+        })
+    });
+    pub(crate) static ref SONG_SEARCH: AsyncOnce<SongSearch> = AsyncOnce::new(async {
+        SongSearch::load(&mut (*DB.get().await).db.try_acquire().unwrap()).await
+    });
 }
 
 struct Database {
@@ -79,17 +91,13 @@ fn ws_routes() -> Scope {
 async fn main() -> std::io::Result<()> {
     dotenv().ok();
     pretty_env_logger::init();
-    let db = Arc::new(Database {
-        db: Database::setup(env!("DATABASE_URL"), 100)
-            .await
-            .expect("failed to check database url"),
-    });
+
     HttpServer::new(move || {
         let auth0_config = extractors::Auth0Config::default();
         let cors = Cors::permissive();
         App::new()
             .app_data(auth0_config)
-            .app_data(db.clone())
+            .app_data(&*DB)
             .wrap(cors)
             .wrap(middlewares::err_handlers())
             .wrap(middlewares::security_headers())

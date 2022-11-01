@@ -1,19 +1,15 @@
 use crate::api::types::{Message, Metadata};
+use crate::api::BoolResult;
 use crate::extractors::Claims;
 use crate::types::{User, UserFromDB};
+use crate::DB;
 use crate::{fetch_db, response};
-use crate::api::BoolResult;
-use crate::{time, Database, BRANCH, VERSION};
-use actix_web::{
-    get,
-    web::{self, Data},
-    Responder,
-};
+use crate::{time, BRANCH, VERSION};
+use actix_web::{get, web, Responder};
 use actix_web::{HttpRequest, HttpResponse};
 use reqwest::StatusCode;
 use sqlx::{pool::PoolConnection, query, query_as, Sqlite};
 use std::collections::VecDeque;
-use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 // #[get("/admin")]
@@ -49,7 +45,7 @@ pub(crate) async fn is_username_taken(
 #[get("/taken")]
 pub(crate) async fn user_taken(req: HttpRequest) -> impl Responder {
     if let Some(v) = req.headers().get("data") {
-        let mut db = fetch_db!(req);
+        let mut db = fetch_db!();
         return if is_username_taken(v.as_bytes(), &mut db).await {
             response!("taken")
         } else {
@@ -61,7 +57,7 @@ pub(crate) async fn user_taken(req: HttpRequest) -> impl Responder {
 
 #[get("/self")]
 pub async fn user_self(req: HttpRequest, claims: Claims) -> impl Responder {
-    let mut db = fetch_db!(req);
+    let mut db = fetch_db!();
     let result = query_as!(UserFromDB, "select * from users where id == $1", claims.sub)
         .fetch_optional(&mut db)
         .await;
@@ -77,7 +73,7 @@ pub async fn user_new(claims: Claims, req: HttpRequest) -> impl Responder {
     if let Some(v) = req.headers().get("Data") {
         // decode string first
         let data: User = serde_json::from_str(v.to_str().unwrap()).unwrap();
-        let mut db = fetch_db!(req);
+        let mut db = fetch_db!();
         if is_username_taken(data.username.as_bytes(), &mut db).await {
             return response!("failed to create new user");
         }
@@ -101,7 +97,7 @@ pub async fn edit(claims: Claims, req: HttpRequest) -> impl Responder {
     if let Some(v) = req.headers().get("Data") {
         // decode string first
         let data: User = serde_json::from_str(v.to_str().unwrap()).unwrap();
-        let mut db = fetch_db!(req);
+        let mut db = fetch_db!();
         if is_username_taken(data.username.as_bytes(), &mut db).await {
             return response!("failed to create new user");
         }
@@ -128,7 +124,7 @@ pub async fn edit(claims: Claims, req: HttpRequest) -> impl Responder {
 
 #[get("/follow/{user}")]
 pub async fn follow(claims: Claims, user: web::Path<String>, req: HttpRequest) -> impl Responder {
-    let mut db = fetch_db!(req);
+    let mut db = fetch_db!();
     let result = query_as!(UserFromDB, "select * from users where id == $1", claims.sub)
         .fetch_optional(&mut db)
         .await;
@@ -153,7 +149,7 @@ pub async fn follow(claims: Claims, user: web::Path<String>, req: HttpRequest) -
 
 #[get("/unfollow/{user}")]
 pub async fn unfollow(claims: Claims, user: web::Path<String>, req: HttpRequest) -> impl Responder {
-    let mut db = fetch_db!(req);
+    let mut db = fetch_db!();
     let result = query_as!(UserFromDB, "select * from users where id == $1", claims.sub)
         .fetch_optional(&mut db)
         .await;
@@ -178,8 +174,12 @@ pub async fn unfollow(claims: Claims, user: web::Path<String>, req: HttpRequest)
 
 #[get("/delete")]
 pub async fn delete(claims: Claims, req: HttpRequest) -> impl Responder {
-    let mut db = fetch_db!(req);
-    if query!("delete from users where id = $1", claims.sub).execute(&mut db).await.is_ok() {
+    let mut db = fetch_db!();
+    if query!("delete from users where id = $1", claims.sub)
+        .execute(&mut db)
+        .await
+        .is_ok()
+    {
         HttpResponse::new(StatusCode::OK)
     } else {
         HttpResponse::new(StatusCode::SERVICE_UNAVAILABLE)
@@ -187,16 +187,31 @@ pub async fn delete(claims: Claims, req: HttpRequest) -> impl Responder {
 }
 
 #[get("/delete/{username}")]
-pub async fn delete_user(claims: Claims, username: web::Path<String>, req: HttpRequest) -> impl Responder {
+pub async fn delete_user(
+    claims: Claims,
+    username: web::Path<String>,
+    req: HttpRequest,
+) -> impl Responder {
     let username = username.to_string();
-    let mut db = fetch_db!(req);
-    if let Ok(Some(v)) = query_as!(BoolResult, "select admin from users where id == $1 and admin == true", claims.sub).fetch_optional(&mut db).await {
+    let mut db = fetch_db!();
+    if let Ok(Some(v)) = query_as!(
+        BoolResult,
+        "select admin from users where id == $1 and admin == true",
+        claims.sub
+    )
+    .fetch_optional(&mut db)
+    .await
+    {
         if v.admin {
-            return if query!("delete from users where username = $1", username).execute(&mut db).await.is_ok() {
+            return if query!("delete from users where username = $1", username)
+                .execute(&mut db)
+                .await
+                .is_ok()
+            {
                 HttpResponse::new(StatusCode::OK)
             } else {
                 HttpResponse::new(StatusCode::SERVICE_UNAVAILABLE)
-            }
+            };
         }
     }
     HttpResponse::new(StatusCode::SERVICE_UNAVAILABLE)
@@ -204,7 +219,7 @@ pub async fn delete_user(claims: Claims, username: web::Path<String>, req: HttpR
 
 #[get("/listen/{song}")]
 pub async fn listen(claims: Claims, song: web::Path<String>, req: HttpRequest) -> impl Responder {
-    let mut db = fetch_db!(req);
+    let mut db = fetch_db!();
     let result = query_as!(UserFromDB, "select * from users where id == $1", claims.sub)
         .fetch_optional(&mut db)
         .await;

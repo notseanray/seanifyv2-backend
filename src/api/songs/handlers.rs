@@ -5,6 +5,7 @@ use actix_web::{
     web::{self, Data},
     Responder,
 };
+use async_once::AsyncOnce;
 
 use sqlx::{query, query_as};
 

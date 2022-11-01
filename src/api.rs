@@ -6,14 +6,8 @@ pub mod users;
 
 #[macro_export]
 macro_rules! fetch_db {
-    ($req:expr) => {
-        $req.app_data::<Data<Mutex<Database>>>()
-            .unwrap()
-            .lock()
-            .unwrap()
-            .db
-            .try_acquire()
-            .unwrap()
+    () => {
+        (*DB.get().await).db.try_acquire().unwrap()
     };
 }
 

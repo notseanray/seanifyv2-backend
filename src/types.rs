@@ -1,23 +1,20 @@
 use crate::{
     fuzzy::{fuzzy_search_best_n, SearchType},
     youtube::VideoData,
-    CONFIG,
+    CONFIG, SONG_SEARCH,
 };
 use anyhow::{anyhow, Result};
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
-use sqlx::{pool::PoolConnection, query, query_as, Pool, Sqlite};
-use std::{
-    collections::VecDeque,
-    fs,
-    process::{self, Command},
-};
+use sqlx::{pool::PoolConnection, query, query_as, Sqlite};
+use std::{collections::VecDeque, fs, process::Command};
 
 // The number of songs that we report back with last played
 // const LAST_PLAYED_LENGTH: usize = 30;
 const MAX_LAST_PLAYED: usize = 30;
 const MAX_SEARCH_RESULTS: usize = 30;
 
+#[allow(dead_code)]
 #[derive(Deserialize)]
 pub(crate) struct Config {
     #[serde(default = "default_host")]
@@ -261,7 +258,7 @@ impl DownloadCache {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub(crate) struct Song {
     pub(crate) id: String,
     pub(crate) title: String,
@@ -330,7 +327,7 @@ impl<'a> Song {
                 // ws msg
             }
         }
-        unimplemented!();
+        None
     }
     // pass in db handle from from_url
     async fn insert(id: &str, user: String, db: &mut PoolConnection<Sqlite>) -> Result<()> {
@@ -396,18 +393,150 @@ impl SongSearch {
     ) -> Vec<(&Song, f32)> {
         fuzzy_search_best_n(term, &self.songs, amount, &search_type)
     }
+    pub(crate) fn get(&self, name: Option<&str>, id: Option<&str>) -> Vec<Song> {
+        match (name, id) {
+            (Some(l), _) => unimplemented!(),
+            (_, Some(r)) => self
+                .songs
+                .iter()
+                .filter(|x| Some(x.id.as_str()) == id)
+                .cloned()
+                .collect(),
+            _ => unreachable!(),
+        }
+    }
 }
 
-pub(crate) struct Playlist<'a> {
-    pub(crate) name: &'a str,
-    pub(crate) public: bool,
+pub(crate) struct PlaylistDB {
+    pub(crate) name: String,
+    pub(crate) public_playlist: bool,
+    pub(crate) songs: String,
+    pub(crate) author: String,
+    pub(crate) description: String,
+    pub(crate) likes: String,
+    pub(crate) cover: String,
+    pub(crate) duration: i64,
+    pub(crate) lastupdate: String,
+}
+
+impl From<Playlist> for PlaylistDB {
+    fn from(s: Playlist) -> Self {
+        Self {
+            name: s.name,
+            public_playlist: s.public_playlist,
+            songs: s.songs.join("`"),
+            author: s.author,
+            description: s.description,
+            likes: s.likes.join("`"),
+            cover: s.cover,
+            duration: s.duration,
+            lastupdate: s.lastupdate.to_string(),
+        }
+    }
+}
+
+pub(crate) struct Playlist {
+    pub(crate) name: String,
+    pub(crate) public_playlist: bool,
     pub(crate) songs: Vec<String>,
-    pub(crate) author: &'a str,
-    pub(crate) description: &'a str,
-    pub(crate) likes: Vec<&'a str>,
-    pub(crate) cover: Option<String>,
-    pub(crate) duration: u64,
+    pub(crate) author: String,
+    pub(crate) description: String,
+    pub(crate) likes: Vec<String>,
+    pub(crate) cover: String,
+    pub(crate) duration: i64,
     pub(crate) lastupdate: u64,
 }
 
-impl<'a> Playlist<'a> {}
+impl From<PlaylistDB> for Playlist {
+    fn from(s: PlaylistDB) -> Self {
+        Self {
+            name: s.name,
+            public_playlist: s.public_playlist,
+            songs: s.songs.split('`').map(|x| x.to_string()).collect(),
+            author: s.author,
+            description: s.description,
+            likes: s.likes.split('`').map(|x| x.to_string()).collect(),
+            cover: s.cover,
+            duration: s.duration,
+            lastupdate: s.lastupdate.parse().unwrap_or_default(),
+        }
+    }
+}
+
+pub(crate) enum PlaylistError {
+    NotExist,
+    InvalidData,
+}
+
+impl Playlist {
+    pub(crate) async fn from_name(
+        db: &mut PoolConnection<Sqlite>,
+        name: &str,
+        user: &str,
+    ) -> Result<Self, ()> {
+        if let Ok(Some(v)) = query_as!(
+            PlaylistDB,
+            "select * from playlist where name == $1 and author == $2",
+            name,
+            user
+        )
+        .fetch_optional(db)
+        .await
+        {
+            return Ok(v.into());
+        }
+        Err(())
+    }
+
+    pub(crate) async fn get_playlists(
+        db: &mut PoolConnection<Sqlite>,
+        user: &str,
+    ) -> Result<Vec<Self>, ()> {
+        if let Ok(v) = query_as!(
+            PlaylistDB,
+            "select * from playlist where author == $2",
+            user
+        )
+        .fetch_all(db)
+        .await
+        {
+            return Ok(v.into_iter().map(|x| x.into()).collect());
+        }
+        Err(())
+    }
+
+    pub(crate) async fn update_playlist(
+        mut db: PoolConnection<Sqlite>,
+        data: Playlist,
+    ) -> Result<(), PlaylistError> {
+        let current_playlist = match query_as!(
+            PlaylistDB,
+            "select * from playlist where author == $1 and name == $2",
+            data.author,
+            data.name
+        )
+        .fetch_optional(&mut db)
+        .await
+        {
+            Ok(Some(v)) => v,
+            _ => return Err(PlaylistError::NotExist),
+        };
+        let mut data: PlaylistDB = data.into();
+        let mut new_duration: f64 = 0.0;
+        if current_playlist.songs != data.songs {
+            for song in data.songs.split('`') {
+                for song in SONG_SEARCH.get().await.get(None, Some(song)) {
+                    new_duration += song.duration;
+                }
+            }
+        }
+        data.duration = (new_duration + 0.5) as i64;
+        // let current_playlist: Playlist = current_playlist.into();
+        let result = query!("update playlist set public_playlist = $1, songs = $2, description = $3, likes = $4, cover = $5, duration = $6, lastupdate = $7", data.public_playlist, data.songs, data.description, data.likes, data.cover, data.duration, data.lastupdate).execute(&mut db).await;
+        if result.is_ok() {
+            Ok(())
+        } else {
+            Err(PlaylistError::InvalidData)
+        }
+    }
+}
