@@ -56,7 +56,7 @@ pub(crate) async fn user_taken(req: HttpRequest) -> impl Responder {
 }
 
 #[get("/self")]
-pub async fn user_self(req: HttpRequest, claims: Claims) -> impl Responder {
+pub async fn user_self(claims: Claims) -> impl Responder {
     let mut db = fetch_db!();
     let result = query_as!(UserFromDB, "select * from users where id == $1", claims.sub)
         .fetch_optional(&mut db)
@@ -70,8 +70,9 @@ pub async fn user_self(req: HttpRequest, claims: Claims) -> impl Responder {
 
 #[get("/new")]
 pub async fn user_new(claims: Claims, req: HttpRequest) -> impl Responder {
-    if let Some(v) = req.headers().get("Data") {
+    if let Some(v) = req.headers().get("data") {
         // decode string first
+        // TODO ERROR HANDLING
         let data: User = serde_json::from_str(v.to_str().unwrap()).unwrap();
         let mut db = fetch_db!();
         if is_username_taken(data.username.as_bytes(), &mut db).await {
@@ -148,7 +149,7 @@ pub async fn follow(claims: Claims, user: web::Path<String>, req: HttpRequest) -
 }
 
 #[get("/unfollow/{user}")]
-pub async fn unfollow(claims: Claims, user: web::Path<String>, req: HttpRequest) -> impl Responder {
+pub async fn unfollow(claims: Claims, user: web::Path<String>) -> impl Responder {
     let mut db = fetch_db!();
     let result = query_as!(UserFromDB, "select * from users where id == $1", claims.sub)
         .fetch_optional(&mut db)
@@ -173,7 +174,7 @@ pub async fn unfollow(claims: Claims, user: web::Path<String>, req: HttpRequest)
 }
 
 #[get("/delete")]
-pub async fn delete(claims: Claims, req: HttpRequest) -> impl Responder {
+pub async fn delete(claims: Claims) -> impl Responder {
     let mut db = fetch_db!();
     if query!("delete from users where id = $1", claims.sub)
         .execute(&mut db)
@@ -187,11 +188,7 @@ pub async fn delete(claims: Claims, req: HttpRequest) -> impl Responder {
 }
 
 #[get("/delete/{username}")]
-pub async fn delete_user(
-    claims: Claims,
-    username: web::Path<String>,
-    req: HttpRequest,
-) -> impl Responder {
+pub async fn delete_user(claims: Claims, username: web::Path<String>) -> impl Responder {
     let username = username.to_string();
     let mut db = fetch_db!();
     if let Ok(Some(v)) = query_as!(
@@ -218,7 +215,7 @@ pub async fn delete_user(
 }
 
 #[get("/listen/{song}")]
-pub async fn listen(claims: Claims, song: web::Path<String>, req: HttpRequest) -> impl Responder {
+pub async fn listen(claims: Claims, song: web::Path<String>) -> impl Responder {
     let mut db = fetch_db!();
     let result = query_as!(UserFromDB, "select * from users where id == $1", claims.sub)
         .fetch_optional(&mut db)
@@ -240,4 +237,40 @@ pub async fn listen(claims: Claims, song: web::Path<String>, req: HttpRequest) -
         };
     }
     HttpResponse::BadRequest()
+}
+
+#[get("/get/id/{user}")]
+pub async fn get_user_from_id(claims: Claims, user: web::Path<String>) -> impl Responder {
+    let user = user.to_string();
+    let mut db = fetch_db!();
+    if let Some(v) = UserFromDB::from_id(&mut db, &user).await {
+        let v: User = v.into();
+        if !v.public_account {
+            if user == claims.sub {
+                return serde_json::to_string(&v).unwrap();
+            } else {
+                return "".to_string();
+            }
+        }
+        return serde_json::to_string(&v).unwrap();
+    }
+    "".to_string()
+}
+
+#[get("/get/name/{user}")]
+pub async fn get_user_from_name(claims: Claims, user: web::Path<String>) -> impl Responder {
+    let user = user.to_string();
+    let mut db = fetch_db!();
+    if let Some(v) = UserFromDB::from_username(&mut db, &user).await {
+        let v: User = v.into();
+        if !v.public_account {
+            if v.id == claims.sub {
+                return serde_json::to_string(&v).unwrap();
+            } else {
+                return "".to_string();
+            }
+        }
+        return serde_json::to_string(&v).unwrap();
+    }
+    "".to_string()
 }

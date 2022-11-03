@@ -237,6 +237,32 @@ impl UserFromDB {
         }
         new
     }
+    pub(crate) async fn from_id(db: &mut PoolConnection<Sqlite>, id: &str) -> Option<Self> {
+        if let Ok(v) = query_as!(UserFromDB, "select * from users where id == $1", id)
+            .fetch_optional(db)
+            .await
+        {
+            return v;
+        }
+        None
+    }
+
+    pub(crate) async fn from_username(
+        db: &mut PoolConnection<Sqlite>,
+        username: &str,
+    ) -> Option<Self> {
+        if let Ok(v) = query_as!(
+            UserFromDB,
+            "select * from users where username == $1",
+            username
+        )
+        .fetch_optional(db)
+        .await
+        {
+            return v;
+        }
+        None
+    }
 }
 
 pub(crate) struct DownloadCache(VecDeque<(String, String)>);
@@ -407,16 +433,39 @@ impl SongSearch {
     }
 }
 
+#[derive(Deserialize)]
 pub(crate) struct PlaylistDB {
     pub(crate) name: String,
     pub(crate) public_playlist: bool,
     pub(crate) songs: String,
     pub(crate) author: String,
+    pub(crate) author_id: String,
+    pub(crate) edit_list: String,
     pub(crate) description: String,
     pub(crate) likes: String,
     pub(crate) cover: String,
     pub(crate) duration: i64,
     pub(crate) lastupdate: String,
+}
+
+impl PlaylistDB {
+    pub(crate) fn like(previous: &str, follower: &str) -> String {
+        if previous.is_empty() {
+            follower.to_string()
+        } else {
+            format!("{previous}`{follower}")
+        }
+    }
+    pub(crate) fn dislike(previous: &str, unfollower: &str) -> String {
+        let mut new = previous.replace(unfollower, "").replace("``", "`");
+        if new.starts_with('`') && new.len() > 1 {
+            new = new[1..].to_string();
+        }
+        if new.ends_with('`') && new.len() > 1 {
+            new = new[..new.len() - 1].to_string();
+        }
+        new
+    }
 }
 
 impl From<Playlist> for PlaylistDB {
@@ -426,6 +475,8 @@ impl From<Playlist> for PlaylistDB {
             public_playlist: s.public_playlist,
             songs: s.songs.join("`"),
             author: s.author,
+            author_id: s.author_id,
+            edit_list: s.edit_list.join("`"),
             description: s.description,
             likes: s.likes.join("`"),
             cover: s.cover,
@@ -435,11 +486,14 @@ impl From<Playlist> for PlaylistDB {
     }
 }
 
+#[derive(Deserialize, Serialize)]
 pub(crate) struct Playlist {
     pub(crate) name: String,
     pub(crate) public_playlist: bool,
     pub(crate) songs: Vec<String>,
     pub(crate) author: String,
+    pub(crate) author_id: String,
+    pub(crate) edit_list: Vec<String>,
     pub(crate) description: String,
     pub(crate) likes: Vec<String>,
     pub(crate) cover: String,
@@ -454,6 +508,8 @@ impl From<PlaylistDB> for Playlist {
             public_playlist: s.public_playlist,
             songs: s.songs.split('`').map(|x| x.to_string()).collect(),
             author: s.author,
+            author_id: s.author_id,
+            edit_list: s.edit_list.split('`').map(|x| x.to_string()).collect(),
             description: s.description,
             likes: s.likes.split('`').map(|x| x.to_string()).collect(),
             cover: s.cover,
