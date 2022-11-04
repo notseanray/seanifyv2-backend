@@ -32,57 +32,41 @@ pub async fn playlist_new(claims: Claims, req: HttpRequest) -> impl Responder {
     }
 }
 
-#[get("/{username}/{playlist_name}/delete")]
-pub async fn playlist_delete(
-    claims: Claims,
-    _username: web::Path<String>,
-    playlist_name: web::Path<String>,
-) -> impl Responder {
-    let mut db = fetch_db!();
-    let playlist_name = playlist_name.to_string();
-    match query!(
-        "delete from playlist where name == $1 and author_id == $2",
-        playlist_name,
-        claims.sub
-    )
-    .execute(&mut db)
-    .await
-    {
-        Ok(_) => HttpResponse::Ok(),
-        _ => HttpResponse::BadRequest(),
-    }
-}
-
 #[get("/{username}")]
 pub async fn playlist_user_data(username: web::Path<String>, claims: Claims) -> impl Responder {
     let username = username.to_string();
     // if they have an account
     let mut db = fetch_db!();
-    let playlist = query_as!(
+    if let Some(u) = UserFromDB::from_id(&mut db, &claims.sub).await {
+        let playlist = query_as!(
             PlaylistDB,
             "select * from playlist where author == $1",
             username,
         )
         .fetch_all(&mut db)
         .await;
-    if let Ok(v) = playlist {
-        let playlist: Vec<Playlist> = v.into_iter().filter_map(|x| {
-            let x: Playlist = x.into();
-            if x.author_id == claims.sub || x.edit_list.contains(&username) {
-                Some(x)
-            } else {
-                None
+        if let Ok(v) = playlist {
+            let playlist: Vec<Playlist> = v
+                .into_iter()
+                .filter_map(|x| {
+                    let x: Playlist = x.into();
+                    if x.author_id == claims.sub
+                        || x.edit_list.contains(&username)
+                        || x.public_playlist
+                        || u.admin
+                    {
+                        Some(x)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if let Ok(v) = serde_json::to_string(&playlist) {
+                return v;
             }
-        }).collect();
-        if let Ok(v) = serde_json::to_string(&playlist) {
-            return v;
         }
     }
     "[]".to_string()
-}
-
-struct Song {
-    songs: String,
 }
 
 #[get("/{username}/{playlist_name}/hash")]
@@ -93,7 +77,7 @@ pub async fn playlist_hash(
 ) -> impl Responder {
     let mut db = fetch_db!();
     let username = username.to_string();
-    if let Some(_) = UserFromDB::from_id(&mut db, &claims.sub).await {
+    if let Some(u) = UserFromDB::from_id(&mut db, &claims.sub).await {
         let playlist_name = playlist_name.to_string();
         // if they are requesting themself
         let playlist = query_as!(
@@ -105,9 +89,24 @@ pub async fn playlist_hash(
         .fetch_all(&mut db)
         .await;
         if let Ok(v) = playlist {
+            let v: Vec<Playlist> = v
+                .into_iter()
+                .filter_map(|x| {
+                    let x: Playlist = x.into();
+                    if x.author_id == claims.sub
+                        || x.edit_list.contains(&username)
+                        || x.public_playlist
+                        || u.admin
+                    {
+                        Some(x)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
             let mut hasher = blake3::Hasher::new();
             for ele in v {
-                hasher.update(ele.songs.as_bytes());
+                hasher.update(ele.songs.join("").as_bytes());
             }
             return hasher.finalize().to_string();
         }
@@ -125,22 +124,29 @@ pub async fn playlist_data(
     if let Some(u) = UserFromDB::from_id(&mut db, &claims.sub).await {
         let playlist_name = playlist_name.to_string();
         // if they are requesting themself
-        let playlist = {
-            if username.to_string() == u.username {
-                query_as!(
-                    PlaylistDB,
-                    "select * from playlist where author == $1 and name == $2",
-                    u.username,
-                    playlist_name
-                )
-                .fetch_all(&mut db)
-                .await
-            } else {
-                query_as!(PlaylistDB, "select * from playlist where author == $1 and name == $2 and public_playlist == TRUE", u.username, playlist_name).fetch_all(&mut db).await
-            }
-        };
+        let playlist = query_as!(
+            PlaylistDB,
+            "select * from playlist where author == $1 and name == $2",
+            u.username,
+            playlist_name
+        )
+        .fetch_all(&mut db)
+        .await;
         if let Ok(v) = playlist {
-            let playlist: Vec<Playlist> = v.into_iter().map(|x| x.into()).collect();
+            let playlist: Vec<Playlist> = v
+                .into_iter()
+                .filter_map(|x| {
+                    let x: Playlist = x.into();
+                    if x.author_id == claims.sub
+                        || x.edit_list.contains(&username)
+                        || x.public_playlist
+                    {
+                        Some(x)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
             if let Ok(v) = serde_json::to_string(&playlist) {
                 return v;
             }
@@ -151,7 +157,7 @@ pub async fn playlist_data(
 
 #[get("/{username}/{playlist_name}/like")]
 pub async fn playlist_like(
-    username: web::Path<String>,
+    _username: web::Path<String>,
     playlist_name: web::Path<String>,
     claims: Claims,
 ) -> impl Responder {
@@ -159,29 +165,24 @@ pub async fn playlist_like(
     let mut db = fetch_db!();
     if let Some(u) = UserFromDB::from_id(&mut db, &claims.sub).await {
         // if they are requesting themself
-        let playlist = {
-            if username.to_string() == u.username {
-                query_as!(
-                    PlaylistDB,
-                    "select * from playlist where author == $1 and name == $2",
-                    u.username,
-                    playlist_name,
-                )
-                .fetch_optional(&mut db)
-                .await
-            } else {
-                query_as!(
-                    PlaylistDB,
-                    "select * from playlist where author == $1 and name == $2 and public_playlist == TRUE",
-                    u.username,
-                    playlist_name,
-                )
-                .fetch_optional(&mut db)
-                .await
-            }
-        };
+        let playlist = query_as!(
+            PlaylistDB,
+            "select * from playlist where author == $1 and name == $2",
+            u.username,
+            playlist_name,
+        )
+        .fetch_optional(&mut db)
+        .await;
         if let Ok(Some(v)) = playlist {
             let followers = PlaylistDB::like(&v.likes, &claims.sub);
+            let v: Playlist = v.into();
+            if !(v.author_id == claims.sub
+                || v.edit_list.contains(&claims.sub)
+                || v.public_playlist
+                || u.admin)
+            {
+                return HttpResponse::Forbidden();
+            }
             if query!(
                 "update playlist set likes = $1 where author == $2 and name == $3",
                 followers,
@@ -201,7 +202,7 @@ pub async fn playlist_like(
 
 #[get("/{username}/{playlist_name}/dislike")]
 pub async fn playlist_dislike(
-    username: web::Path<String>,
+    _username: web::Path<String>,
     playlist_name: web::Path<String>,
     claims: Claims,
 ) -> impl Responder {
@@ -209,27 +210,14 @@ pub async fn playlist_dislike(
     let mut db = fetch_db!();
     if let Some(u) = UserFromDB::from_id(&mut db, &claims.sub).await {
         // if they are requesting themself
-        let playlist = {
-            if username.to_string() == u.username {
-                query_as!(
-                    PlaylistDB,
-                    "select * from playlist where author == $1 and name == $2",
-                    u.username,
-                    playlist_name,
-                )
-                .fetch_optional(&mut db)
-                .await
-            } else {
-                query_as!(
-                    PlaylistDB,
-                    "select * from playlist where author == $1 and name == $2 and public_playlist == TRUE",
-                    u.username,
-                    playlist_name,
-                )
-                .fetch_optional(&mut db)
-                .await
-            }
-        };
+        let playlist = query_as!(
+            PlaylistDB,
+            "select * from playlist where author == $1 and name == $2",
+            u.username,
+            playlist_name,
+        )
+        .fetch_optional(&mut db)
+        .await;
         if let Ok(Some(v)) = playlist {
             let followers = PlaylistDB::dislike(&v.likes, &claims.sub);
             if query!(
@@ -242,7 +230,15 @@ pub async fn playlist_dislike(
             .await
             .is_ok()
             {
-                return HttpResponse::Ok();
+                if !(v.author_id == claims.sub
+                    || v.edit_list.contains(&claims.sub)
+                    || v.public_playlist
+                    || u.admin)
+                {
+                    return HttpResponse::Forbidden();
+                } else {
+                    return HttpResponse::Ok();
+                }
             }
         }
     }
@@ -251,7 +247,7 @@ pub async fn playlist_dislike(
 
 #[get("/{username}/{playlist_name}/add")]
 pub async fn playlist_add(
-    username: web::Path<String>,
+    _username: web::Path<String>,
     playlist_name: web::Path<String>,
     claims: Claims,
 ) -> impl Responder {
@@ -259,29 +255,23 @@ pub async fn playlist_add(
     let mut db = fetch_db!();
     if let Some(u) = UserFromDB::from_id(&mut db, &claims.sub).await {
         // if they are requesting themself
-        let playlist = {
-            if username.to_string() == u.username {
-                query_as!(
-                    PlaylistDB,
-                    "select * from playlist where author == $1 and name == $2",
-                    u.username,
-                    playlist_name,
-                )
-                .fetch_optional(&mut db)
-                .await
-            } else {
-                query_as!(
-                    PlaylistDB,
-                    "select * from playlist where author == $1 and name == $2 and public_playlist == TRUE",
-                    u.username,
-                    playlist_name,
-                )
-                .fetch_optional(&mut db)
-                .await
-            }
-        };
+        let playlist = query_as!(
+            PlaylistDB,
+            "select * from playlist where author == $1 and name == $2",
+            u.username,
+            playlist_name,
+        )
+        .fetch_optional(&mut db)
+        .await;
         if let Ok(Some(v)) = playlist {
             let followers = PlaylistDB::dislike(&v.likes, &claims.sub);
+            if !(v.author_id == claims.sub
+                || v.edit_list.contains(&claims.sub)
+                || v.public_playlist
+                || u.admin)
+            {
+                return HttpResponse::Forbidden();
+            }
             if query!(
                 "update playlist set likes = $1 where author == $2 and name == $3",
                 followers,
@@ -299,11 +289,39 @@ pub async fn playlist_add(
     HttpResponse::BadRequest()
 }
 
-// #[get("/{username}/{playlist_name}/remove")]
-// pub async fn playlist_remove(
-//     username: web::Path<String>,
-//     playlist_name: web::Path<String>,
-//     claims: Claims,
-// ) -> impl Responder {
-//     unimplemented!();
-// }
+#[get("/{username}/{playlist_name}/delete")]
+pub async fn playlist_delete(
+    _username: web::Path<String>,
+    playlist_name: web::Path<String>,
+    claims: Claims,
+) -> impl Responder {
+    let playlist_name = playlist_name.to_string();
+    let mut db = fetch_db!();
+    if let Some(u) = UserFromDB::from_id(&mut db, &claims.sub).await {
+        // if they are requesting themself
+        let playlist = query_as!(
+            PlaylistDB,
+            "select * from playlist where author == $1 and name == $2",
+            u.username,
+            playlist_name,
+        )
+        .fetch_optional(&mut db)
+        .await;
+        if let Ok(Some(v)) = playlist {
+            if v.author_id == claims.sub || u.admin {
+                return match query!(
+                    "delete from playlist where author == $1 and name == $2",
+                    u.username,
+                    playlist_name
+                )
+                .execute(&mut db)
+                .await
+                {
+                    Ok(_) => HttpResponse::Ok(),
+                    _ => HttpResponse::Forbidden(),
+                };
+            }
+        }
+    }
+    HttpResponse::BadRequest()
+}

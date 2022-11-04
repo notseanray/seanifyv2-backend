@@ -12,31 +12,8 @@ use sqlx::{pool::PoolConnection, query, query_as, Sqlite};
 use std::collections::VecDeque;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-// #[get("/admin")]
-// pub async fn admin(claims: Claims) -> impl Responder {
-//     response!(format!("admin message {}", claims.sub))
-// }
-
-#[get("/protected")]
-pub async fn protected(claims: Claims) -> impl Responder {
-    response!(format!("This is a protected message. {}", claims.sub))
-}
-
-#[get("/public")]
-pub async fn public() -> impl Responder {
-    response!(format!("public"))
-}
-
-pub(crate) async fn is_username_taken(
-    b64_username: &[u8],
-    db: &mut PoolConnection<Sqlite>,
-) -> bool {
-    let decoded = match base64::decode(b64_username) {
-        Ok(v) => v,
-        Err(_) => return false,
-    };
-    let decoded = String::from_utf8_lossy(&decoded);
-    let result = query!("select * from users where username == $1", decoded)
+pub(crate) async fn is_username_taken(username: &str, db: &mut PoolConnection<Sqlite>) -> bool {
+    let result = query!("select * from users where username == $1", username)
         .fetch_optional(db)
         .await;
     matches!(result, Ok(Some(_)))
@@ -46,13 +23,14 @@ pub(crate) async fn is_username_taken(
 pub(crate) async fn user_taken(req: HttpRequest) -> impl Responder {
     if let Some(v) = req.headers().get("data") {
         let mut db = fetch_db!();
-        return if is_username_taken(v.as_bytes(), &mut db).await {
-            response!("taken")
+        if is_username_taken(v.to_str().unwrap_or_default(), &mut db).await {
+            HttpResponse::NotAcceptable()
         } else {
-            response!("not taken")
-        };
+            HttpResponse::Ok()
+        }
+    } else {
+        HttpResponse::BadRequest()
     }
-    response!("not taken")
 }
 
 #[get("/self")]
@@ -71,11 +49,10 @@ pub async fn user_self(claims: Claims) -> impl Responder {
 #[get("/new")]
 pub async fn user_new(claims: Claims, req: HttpRequest) -> impl Responder {
     if let Some(v) = req.headers().get("data") {
-        // decode string first
         // TODO ERROR HANDLING
         let data: User = serde_json::from_str(v.to_str().unwrap()).unwrap();
         let mut db = fetch_db!();
-        if is_username_taken(data.username.as_bytes(), &mut db).await {
+        if is_username_taken(&data.username, &mut db).await {
             return response!("failed to create new user");
         }
         let data = User {
@@ -99,7 +76,7 @@ pub async fn edit(claims: Claims, req: HttpRequest) -> impl Responder {
         // decode string first
         let data: User = serde_json::from_str(v.to_str().unwrap()).unwrap();
         let mut db = fetch_db!();
-        if is_username_taken(data.username.as_bytes(), &mut db).await {
+        if is_username_taken(&data.username, &mut db).await {
             return response!("failed to create new user");
         }
         let result = query_as!(UserFromDB, "select * from users where id == $1", claims.sub)
@@ -124,7 +101,7 @@ pub async fn edit(claims: Claims, req: HttpRequest) -> impl Responder {
 }
 
 #[get("/follow/{user}")]
-pub async fn follow(claims: Claims, user: web::Path<String>, req: HttpRequest) -> impl Responder {
+pub async fn follow(claims: Claims, user: web::Path<String>) -> impl Responder {
     let mut db = fetch_db!();
     let result = query_as!(UserFromDB, "select * from users where id == $1", claims.sub)
         .fetch_optional(&mut db)
