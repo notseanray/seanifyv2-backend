@@ -2,11 +2,11 @@ use crate::extractors::Claims;
 use crate::types::UserFromDB;
 use crate::types::{Playlist, PlaylistDB};
 use crate::DB;
-use web::Path;
 use crate::{fetch_db, time};
 use actix_web::{get, web, Responder};
 use actix_web::{HttpRequest, HttpResponse};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use web::Path;
 
 use sqlx::{query, query_as};
 

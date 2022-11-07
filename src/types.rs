@@ -326,10 +326,7 @@ impl<'a> Song {
         None
     }
     // yt-dlp --socket-timeout 3 --embed-thumbnail --audio-format mp3 --extract-audio --output "M3HhNcl2dMA.%(ext)s" --add-metadata --write-info-json https://www.youtube.com/watch\?v\=M3HhNcl2dMA
-    pub(crate) async fn from_url(
-        url: &'a str,
-        db: &mut PoolConnection<Sqlite>,
-    ) -> Option<Song> {
+    pub(crate) async fn from_url(url: &'a str, db: &mut PoolConnection<Sqlite>) -> Option<Song> {
         if let Some(v) = Self::get_id(url) {
             let _ = fs::create_dir_all("./songs");
             let mut cmd = Command::new("yt-dlp");

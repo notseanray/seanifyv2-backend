@@ -1,16 +1,16 @@
 use crate::extractors::Claims;
 use crate::fetch_db;
-use crate::DB;
 use crate::types::Song;
 use crate::types::UserFromDB;
-use web::Path;
-use actix_web::{HttpRequest, HttpResponse};
+use crate::DB;
 use actix_web::{
     get,
     web::{self, Data},
     Responder,
 };
+use actix_web::{HttpRequest, HttpResponse};
 use async_once::AsyncOnce;
+use web::Path;
 
 use sqlx::{query, query_as};
 
@@ -18,7 +18,10 @@ use sqlx::{query, query_as};
 pub async fn song_new(req: HttpRequest, claims: Claims) -> impl Responder {
     let mut db = fetch_db!();
     if let Some(url) = req.headers().get("url") {
-        if let (Some(user), Ok(url)) = (UserFromDB::from_id(&mut db, &claims.sub).await, url.to_str()) {
+        if let (Some(user), Ok(url)) = (
+            UserFromDB::from_id(&mut db, &claims.sub).await,
+            url.to_str(),
+        ) {
             let song = Song::from_url(url, &mut db).await;
             if song.is_some() {
                 return HttpResponse::Ok();
@@ -32,9 +35,11 @@ pub async fn song_new(req: HttpRequest, claims: Claims) -> impl Responder {
 pub async fn song_delete(claims: Claims, song: Path<String>) -> impl Responder {
     let mut db = fetch_db!();
     if let Some(url) = req.headers().get("url") {
-        if let (Some(user), Ok(url)) = (UserFromDB::from_id(&mut db, &claims.sub).await, url.to_str()) {
+        if let (Some(user), Ok(url)) = (
+            UserFromDB::from_id(&mut db, &claims.sub).await,
+            url.to_str(),
+        ) {
             if user.admin {
-
             } else {
                 query_as!("delete from songs where added_by == $1 and title == $2 ")
             }
