@@ -2,6 +2,7 @@ use crate::extractors::Claims;
 use crate::types::UserFromDB;
 use crate::types::{Playlist, PlaylistDB};
 use crate::DB;
+use web::Path;
 use crate::{fetch_db, time};
 use actix_web::{get, web, Responder};
 use actix_web::{HttpRequest, HttpResponse};
@@ -33,7 +34,7 @@ pub async fn playlist_new(claims: Claims, req: HttpRequest) -> impl Responder {
 }
 
 #[get("/{username}")]
-pub async fn playlist_user_data(username: web::Path<String>, claims: Claims) -> impl Responder {
+pub async fn playlist_user_data(username: Path<String>, claims: Claims) -> impl Responder {
     let username = username.to_string();
     // if they have an account
     let mut db = fetch_db!();
@@ -71,8 +72,8 @@ pub async fn playlist_user_data(username: web::Path<String>, claims: Claims) -> 
 
 #[get("/{username}/{playlist_name}/hash")]
 pub async fn playlist_hash(
-    username: web::Path<String>,
-    playlist_name: web::Path<String>,
+    username: Path<String>,
+    playlist_name: Path<String>,
     claims: Claims,
 ) -> impl Responder {
     let mut db = fetch_db!();
@@ -116,8 +117,8 @@ pub async fn playlist_hash(
 
 #[get("/{username}/{playlist_name}/data")]
 pub async fn playlist_data(
-    username: web::Path<String>,
-    playlist_name: web::Path<String>,
+    username: Path<String>,
+    playlist_name: Path<String>,
     claims: Claims,
 ) -> impl Responder {
     let mut db = fetch_db!();
@@ -157,8 +158,8 @@ pub async fn playlist_data(
 
 #[get("/{username}/{playlist_name}/like")]
 pub async fn playlist_like(
-    _username: web::Path<String>,
-    playlist_name: web::Path<String>,
+    _username: Path<String>,
+    playlist_name: Path<String>,
     claims: Claims,
 ) -> impl Responder {
     let playlist_name = playlist_name.to_string();
@@ -202,8 +203,8 @@ pub async fn playlist_like(
 
 #[get("/{username}/{playlist_name}/dislike")]
 pub async fn playlist_dislike(
-    _username: web::Path<String>,
-    playlist_name: web::Path<String>,
+    _username: Path<String>,
+    playlist_name: Path<String>,
     claims: Claims,
 ) -> impl Responder {
     let playlist_name = playlist_name.to_string();
@@ -247,8 +248,8 @@ pub async fn playlist_dislike(
 
 #[get("/{username}/{playlist_name}/add")]
 pub async fn playlist_add(
-    _username: web::Path<String>,
-    playlist_name: web::Path<String>,
+    _username: Path<String>,
+    playlist_name: Path<String>,
     claims: Claims,
 ) -> impl Responder {
     let playlist_name = playlist_name.to_string();
@@ -291,8 +292,8 @@ pub async fn playlist_add(
 
 #[get("/{username}/{playlist_name}/delete")]
 pub async fn playlist_delete(
-    _username: web::Path<String>,
-    playlist_name: web::Path<String>,
+    _username: Path<String>,
+    playlist_name: Path<String>,
     claims: Claims,
 ) -> impl Responder {
     let playlist_name = playlist_name.to_string();

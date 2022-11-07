@@ -23,7 +23,6 @@ serde = "1.0.144"
 serde_json = "1.0.85"
 futures = "0.3.24"
 sqlx = { version = "0.6.1", features = ["runtime-tokio-rustls", "sqlite", "macros"] }
-base64 = "0.13.0"
 lazy_static = "1.4.0"
 mp3-metadata = "0.3.4"
 anyhow = "1.0.65"

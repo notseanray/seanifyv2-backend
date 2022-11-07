@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS songs
     artist          TEXT             NOT NULL,
     genre           TEXT             NOT NULL,
     album           TEXT             NOT NULL,
+    url             TEXT             NOT NULL,
     duration        FLOAT            NOT NULL,
     age_limit       UNSIGNED INTEGER NOT NULL DEFAULT 0,
     webpage_url     TEXT             NOT NULL,

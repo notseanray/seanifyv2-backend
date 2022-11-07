@@ -272,8 +272,8 @@ impl DownloadCache {
         self.0.push_front((url, user));
     }
     pub(crate) async fn cycle(&mut self, db: &mut PoolConnection<Sqlite>) {
-        if let Some((url, user)) = self.0.pop_back() {
-            Song::from_url(&url, user, db).await;
+        if let Some((url, _user)) = self.0.pop_back() {
+            Song::from_url(&url, db).await;
         }
     }
     pub(crate) fn clear(&mut self) {
@@ -292,6 +292,7 @@ pub(crate) struct Song {
     pub(crate) artist: String,
     pub(crate) genre: String,
     pub(crate) album: String,
+    pub(crate) url: String,
     pub(crate) duration: f64,
     pub(crate) age_limit: i64,
     pub(crate) webpage_url: String,
@@ -327,7 +328,6 @@ impl<'a> Song {
     // yt-dlp --socket-timeout 3 --embed-thumbnail --audio-format mp3 --extract-audio --output "M3HhNcl2dMA.%(ext)s" --add-metadata --write-info-json https://www.youtube.com/watch\?v\=M3HhNcl2dMA
     pub(crate) async fn from_url(
         url: &'a str,
-        user: String,
         db: &mut PoolConnection<Sqlite>,
     ) -> Option<Song> {
         if let Some(v) = Self::get_id(url) {
@@ -349,14 +349,14 @@ impl<'a> Song {
                 url,
             ]);
             let cmd = cmd.output().expect("yt dlp not installed");
-            if cmd.status.success() && Self::insert(v, user, db).await.is_ok() {
+            if let (true, Ok(s)) = (cmd.status.success(), Self::insert(v, db, url).await) {
                 // ws msg
             }
         }
         None
     }
     // pass in db handle from from_url
-    async fn insert(id: &str, user: String, db: &mut PoolConnection<Sqlite>) -> Result<()> {
+    async fn insert(id: &str, db: &mut PoolConnection<Sqlite>, url: &str) -> Result<Song> {
         let meta = match mp3_metadata::read_from_file(format!("songs/{id}.mp3")) {
             Ok(v) => v,
             _ => return Err(anyhow!("Failed to extract metadata")),
@@ -373,6 +373,7 @@ impl<'a> Song {
                 id: id.to_string(),
                 title: data.title,
                 uploader: data.uploader,
+                url: url.to_string(),
                 artist,
                 genre: format!("{:?}", tag.genre),
                 album: tag.album,
@@ -382,10 +383,10 @@ impl<'a> Song {
                 was_live: data.was_live,
                 upload_date: data.upload_date,
                 filesize: data.filesize,
-                added_by: user,
+                added_by: id.to_string(),
             };
-            let _ = query!("insert into songs(id, title, uploader, artist, genre, album, duration, age_limit, webpage_url, was_live, upload_date, filesize, added_by, default_search) values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)", new_song.id, new_song.title, new_song.uploader, new_song.artist, new_song.genre, new_song.album, new_song.duration, new_song.age_limit, new_song.webpage_url, new_song.was_live, new_song.upload_date, new_song.filesize, new_song.added_by, new_song.default_search).execute(db).await;
-            Ok(())
+            let _ = query!("insert into songs(id, title, uploader, artist, genre, album, url, duration, age_limit, webpage_url, was_live, upload_date, filesize, added_by, default_search) values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)", new_song.id, new_song.title, new_song.uploader, new_song.artist, new_song.genre, new_song.album, new_song.url, new_song.duration, new_song.age_limit, new_song.webpage_url, new_song.was_live, new_song.upload_date, new_song.filesize, new_song.added_by, new_song.default_search).execute(db).await;
+            Ok(new_song)
         } else {
             Err(anyhow!("failed to read song data"))
         }
