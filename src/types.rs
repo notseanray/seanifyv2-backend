@@ -411,23 +411,21 @@ impl SongSearch {
     }
     pub(crate) fn search(
         &self,
-        term: String,
+        term: &str,
         search_type: SearchType,
         amount: usize,
     ) -> Vec<(&Song, f32)> {
         fuzzy_search_best_n(term, &self.songs, amount, &search_type)
     }
+    pub(crate) fn get_by_id(&self, id: &str) -> Vec<Song> {
+        self.songs
+            .iter()
+            .filter(|x| Some(x.id.as_str()) == Some(id))
+            .cloned()
+            .collect()
+    }
     pub(crate) fn get(&self, name: Option<&str>, id: Option<&str>) -> Vec<Song> {
-        match (name, id) {
-            (Some(l), _) => unimplemented!(),
-            (_, Some(r)) => self
-                .songs
-                .iter()
-                .filter(|x| Some(x.id.as_str()) == id)
-                .cloned()
-                .collect(),
-            _ => unreachable!(),
-        }
+        unimplemented!();
     }
 }
 

@@ -7,6 +7,7 @@ pub(crate) enum SearchType {
     Title,
     Default,
     User,
+    Id,
 }
 
 pub(crate) trait FuzzyComparable<'a> {
@@ -21,6 +22,7 @@ impl<'a> FuzzyComparable<'a> for Song {
             S::Title => &self.title,
             S::Default => &self.default_search,
             S::User => "",
+            S::Id => "",
         }
     }
 }
@@ -42,7 +44,7 @@ impl<'a> FuzzyComparable<'a> for Playlist {
 // repo
 
 pub(crate) fn fuzzy_search_best_n<'a, T: FuzzyComparable<'a>>(
-    s: String,
+    s: &str,
     list: &'a [T],
     n: usize,
     st: &SearchType,
@@ -54,7 +56,7 @@ pub(crate) fn fuzzy_search_best_n<'a, T: FuzzyComparable<'a>>(
 }
 
 pub(crate) fn fuzzy_search_sorted<'a, T: FuzzyComparable<'a>>(
-    s: String,
+    s: &str,
     list: &'a [T],
     st: &SearchType,
 ) -> Vec<(&'a T, f32)> {
@@ -65,13 +67,13 @@ pub(crate) fn fuzzy_search_sorted<'a, T: FuzzyComparable<'a>>(
 
 #[inline]
 pub(crate) fn fuzzy_search<'a, T: FuzzyComparable<'a>>(
-    s: String,
+    s: &str,
     list: &'a [T],
     st: &SearchType,
 ) -> Vec<(&'a T, f32)> {
     list.iter()
         .map(|value| {
-            let res = fuzzy_compare(&s, value.search_term(st));
+            let res = fuzzy_compare(s, value.search_term(st));
             (value, res)
         })
         .collect()
