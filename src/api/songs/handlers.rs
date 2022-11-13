@@ -101,9 +101,14 @@ pub async fn song_delete(claims: Claims, req: HttpRequest, song: Path<String>) -
 }
 
 #[get("/{song}/like")]
-pub async fn song_like(claims: Claims) -> impl Responder {
-    // response!(format!("admin message {}", claims.sub))
-    "test".to_string()
+pub async fn song_like(claims: Claims, song: Path<String>) -> impl Responder {
+    let mut db = fetch_db!();
+    if let Some(mut u) = UserFromDB::from_id(&mut db, &claims.sub).await {
+        u.like(song.as_str());
+        HttpResponse::Ok()
+    } else {
+        HttpResponse::BadRequest()
+    }
 }
 
 #[get("/{song}/dislike")]

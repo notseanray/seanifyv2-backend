@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users
     display_name    TEXT             NOT NULL,
     followers       TEXT             NOT NULL,
     following       TEXT             NOT NULL,
+    likes           TEXT             NOT NULL,
     analytics       BOOLEAN          NOT NULL,
     admin           BOOLEAN          NOT NULL,
     lastupdate      TEXT             NOT NULL,

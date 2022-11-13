@@ -114,6 +114,7 @@ pub(crate) struct User {
     pub(crate) followers: Vec<String>,
     // id of following
     pub(crate) following: Vec<String>,
+    pub(crate) likes: Vec<String>,
     // count to playback statistics
     pub(crate) analytics: bool,
     pub(crate) admin: bool,
@@ -156,6 +157,8 @@ pub(crate) struct UserFromDB {
     pub(crate) followers: String,
     // id of following
     pub(crate) following: String,
+    // ids of liked songs
+    pub(crate) likes: String,
     // count to playback statistics
     pub(crate) analytics: bool,
     pub(crate) admin: bool,
@@ -177,6 +180,7 @@ impl From<UserFromDB> for User {
             display_name: u.display_name,
             followers: u.followers.split('`').map(|x| x.into()).collect(),
             following: u.following.split('`').map(|x| x.into()).collect(),
+            likes: u.likes.split('`').map(|x| x.into()).collect(),
             analytics: u.analytics,
             admin: u.admin,
             lastupdate: u.lastupdate.parse().unwrap_or(0),
@@ -200,6 +204,7 @@ impl From<User> for UserFromDB {
             display_name: u.display_name,
             followers: u.followers.join("`"),
             following: u.following.join("`"),
+            likes: u.likes.join("`"),
             analytics: u.analytics,
             admin: u.admin,
             lastupdate: u.lastupdate.to_string(),
@@ -262,6 +267,23 @@ impl UserFromDB {
             return v;
         }
         None
+    }
+
+    pub(crate) fn like(&mut self, id: &str) {
+        if self.likes.is_empty() {
+            self.likes = id.to_string();
+        } else {
+            self.likes = format!("{}`{id}", self.likes);
+        }
+    }
+    pub(crate) fn dislikes(&mut self, id: &str) {
+        let new = self.likes.replace(id, "").replace("``", "`");
+        if new.starts_with('`') && new.len() > 1 {
+            self.likes = new[1..].to_string();
+        }
+        if new.ends_with('`') && new.len() > 1 {
+            self.likes = new[..new.len() - 1].to_string();
+        }
     }
 }
 
@@ -382,7 +404,56 @@ impl<'a> Song {
                 filesize: data.filesize,
                 added_by: id.to_string(),
             };
-            let _ = query!("insert into songs(id, title, uploader, artist, genre, album, url, duration, age_limit, webpage_url, was_live, upload_date, filesize, added_by, default_search) values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)", new_song.id, new_song.title, new_song.uploader, new_song.artist, new_song.genre, new_song.album, new_song.url, new_song.duration, new_song.age_limit, new_song.webpage_url, new_song.was_live, new_song.upload_date, new_song.filesize, new_song.added_by, new_song.default_search).execute(db).await;
+            let _ = query!(
+                r#"insert into songs(
+    id,
+    title,
+    uploader,
+    artist,
+    genre,
+    album,
+    url,
+    duration,
+    age_limit,
+    webpage_url,
+    was_live,
+    upload_date,
+    filesize,
+    added_by,
+    default_search)
+values($1,
+       $2,
+       $3,
+       $4,
+       $5,
+       $6,
+       $7,
+       $8,
+       $9,
+       $10,
+       $11,
+       $12,
+       $13,
+       $14,
+   $15)"#,
+                new_song.id,
+                new_song.title,
+                new_song.uploader,
+                new_song.artist,
+                new_song.genre,
+                new_song.album,
+                new_song.url,
+                new_song.duration,
+                new_song.age_limit,
+                new_song.webpage_url,
+                new_song.was_live,
+                new_song.upload_date,
+                new_song.filesize,
+                new_song.added_by,
+                new_song.default_search
+            )
+            .execute(db)
+            .await;
             Ok(new_song)
         } else {
             Err(anyhow!("failed to read song data"))
