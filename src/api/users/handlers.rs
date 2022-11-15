@@ -167,6 +167,9 @@ pub async fn delete(claims: Claims) -> impl Responder {
 #[get("/delete/{username}")]
 pub async fn delete_user(claims: Claims, username: web::Path<String>) -> impl Responder {
     let username = username.to_string();
+    if username.contains('`') {
+        return HttpResponse::BadRequest();
+    }
     let mut db = fetch_db!();
     if let Ok(Some(v)) = query_as!(
         BoolResult,
@@ -182,17 +185,20 @@ pub async fn delete_user(claims: Claims, username: web::Path<String>) -> impl Re
                 .await
                 .is_ok()
             {
-                HttpResponse::new(StatusCode::OK)
+                HttpResponse::Ok()
             } else {
-                HttpResponse::new(StatusCode::SERVICE_UNAVAILABLE)
+                HttpResponse::BadRequest()
             };
         }
     }
-    HttpResponse::new(StatusCode::SERVICE_UNAVAILABLE)
+    HttpResponse::BadRequest()
 }
 
 #[get("/listen/{song}")]
 pub async fn listen(claims: Claims, song: web::Path<String>) -> impl Responder {
+    if song.contains('`') {
+        return HttpResponse::BadRequest();
+    }
     let mut db = fetch_db!();
     let result = query_as!(UserFromDB, "select * from users where id == $1", claims.sub)
         .fetch_optional(&mut db)

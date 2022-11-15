@@ -6,18 +6,18 @@ use std::{
 };
 
 #[derive(Deserialize, Serialize)]
-pub(crate) struct VideoData {
-    pub(crate) id: String,
-    pub(crate) title: String,
-    pub(crate) thumbnail: String,
-    pub(crate) uploader: String,
-    pub(crate) uploader_url: String,
-    pub(crate) duration: usize,
-    pub(crate) age_limit: i64,
-    pub(crate) webpage_url: String,
-    pub(crate) was_live: bool,
-    pub(crate) upload_date: String,
-    pub(crate) filesize: i64,
+pub struct VideoData {
+    pub id: String,
+    pub title: String,
+    pub thumbnail: String,
+    pub uploader: String,
+    pub uploader_url: String,
+    pub duration: usize,
+    pub age_limit: i64,
+    pub webpage_url: String,
+    pub was_live: bool,
+    pub upload_date: String,
+    pub filesize: i64,
 }
 
 // #[derive(Debug, Display)]
@@ -31,7 +31,7 @@ impl VideoData {
         let data = fs::read_to_string(format!("songs/{id}.info.json"))?;
         Ok(serde_json::from_str(&data)?)
     }
-    pub(crate) fn load_and_replace(id: &str) -> Result<Self> {
+    pub fn load_and_replace(id: &str) -> Result<Self> {
         let full = Self::from_yt_file(id)?;
         let d = serde_json::to_string(&full)?;
         let mut f = File::options()

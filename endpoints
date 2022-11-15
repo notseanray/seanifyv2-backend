@@ -33,6 +33,8 @@ Playlist
     edit
      db update
 
+    /like
+
 Songs
     new
      song url

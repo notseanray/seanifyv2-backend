@@ -2,7 +2,7 @@ use std::iter;
 
 use crate::types::{Playlist, Song, User};
 
-pub(crate) enum SearchType {
+pub enum SearchType {
     Uploader,
     Title,
     Default,
@@ -10,7 +10,7 @@ pub(crate) enum SearchType {
     Id,
 }
 
-pub(crate) trait FuzzyComparable<'a> {
+pub trait FuzzyComparable<'a> {
     fn search_term(&self, search_type: &SearchType) -> &str;
 }
 
@@ -43,7 +43,7 @@ impl<'a> FuzzyComparable<'a> for Playlist {
 // I don't need all the crate and I also want to be able to tweak the code without an additional
 // repo
 
-pub(crate) fn fuzzy_search_best_n<'a, T: FuzzyComparable<'a>>(
+pub fn fuzzy_search_best_n<'a, T: FuzzyComparable<'a>>(
     s: &str,
     list: &'a [T],
     n: usize,
@@ -55,7 +55,7 @@ pub(crate) fn fuzzy_search_best_n<'a, T: FuzzyComparable<'a>>(
         .collect()
 }
 
-pub(crate) fn fuzzy_search_sorted<'a, T: FuzzyComparable<'a>>(
+pub fn fuzzy_search_sorted<'a, T: FuzzyComparable<'a>>(
     s: &str,
     list: &'a [T],
     st: &SearchType,
@@ -66,7 +66,7 @@ pub(crate) fn fuzzy_search_sorted<'a, T: FuzzyComparable<'a>>(
 }
 
 #[inline]
-pub(crate) fn fuzzy_search<'a, T: FuzzyComparable<'a>>(
+pub fn fuzzy_search<'a, T: FuzzyComparable<'a>>(
     s: &str,
     list: &'a [T],
     st: &SearchType,
@@ -80,7 +80,7 @@ pub(crate) fn fuzzy_search<'a, T: FuzzyComparable<'a>>(
 }
 
 #[inline]
-pub(crate) fn fuzzy_compare(a: &str, b: &str) -> f32 {
+pub fn fuzzy_compare(a: &str, b: &str) -> f32 {
     // gets length of first input string plus 1 (because of the 3 added spaces (' '))
     let string_len = a.chars().count() + 1;
 

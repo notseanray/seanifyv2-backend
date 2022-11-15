@@ -7,6 +7,7 @@ use anyhow::{anyhow, Result};
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use sqlx::{pool::PoolConnection, query, query_as, Sqlite};
+use std::error::Error;
 use std::{collections::VecDeque, fs, process::Command};
 
 // The number of songs that we report back with last played
@@ -16,7 +17,7 @@ const MAX_SEARCH_RESULTS: usize = 30;
 
 #[allow(dead_code)]
 #[derive(Deserialize)]
-pub(crate) struct Config {
+pub struct Config {
     #[serde(default = "default_host")]
     pub host: String,
     #[serde(default = "default_port")]
@@ -80,7 +81,7 @@ impl Default for Config {
 }
 
 #[derive(Serialize)]
-pub(crate) struct ErrorMessage {
+pub struct ErrorMessage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -89,80 +90,83 @@ pub(crate) struct ErrorMessage {
 }
 
 #[derive(Serialize, Deserialize)]
-pub(crate) struct User {
-    pub(crate) id: String,
-    pub(crate) username: String,
+pub struct User {
+    pub id: String,
+    pub username: String,
 
     // do we want to store preferences on the server
-    pub(crate) serverside: bool,
+    pub serverside: bool,
     // store preferences for sending thumbnail data for low speed connections
-    pub(crate) thumbnails: bool,
+    pub thumbnails: bool,
     // auto play songs when done
-    pub(crate) autoplay: bool,
+    pub autoplay: bool,
 
     // allow people to follow
-    pub(crate) allow_followers: bool,
+    pub allow_followers: bool,
     // public profile that can be searched
-    pub(crate) public_account: bool,
+    pub public_account: bool,
     // show song activity
-    pub(crate) activity: bool,
+    pub activity: bool,
     // show last played
-    pub(crate) last_played: VecDeque<String>,
+    pub last_played: VecDeque<String>,
     // display nick name
-    pub(crate) display_name: String,
+    pub display_name: String,
     // id of followers
-    pub(crate) followers: Vec<String>,
+    pub followers: Vec<String>,
     // id of following
-    pub(crate) following: Vec<String>,
-    pub(crate) likes: Vec<String>,
+    pub following: Vec<String>,
+    // ids of liked songs
+    pub likes: Vec<String>,
+    // ids of liked playlists
+    pub liked_playlist: Vec<String>,
     // count to playback statistics
-    pub(crate) analytics: bool,
-    pub(crate) admin: bool,
-    pub(crate) lastupdate: u64,
+    pub analytics: bool,
+    pub admin: bool,
+    pub lastupdate: u64,
 }
 
 impl User {
-    // pub(crate) fn now_playing(&mut self, id: String) {
+    // pub fn now_playing(&mut self, id: String) {
     // if self.last_played.len() > CONFIG.max_last_played {
     //     let _ = self.last_played.pop_back();
     // }
     // self.last_played.push_front(id);
     // }
-    // pub(crate) fn update_user(&mut self, jjjjjjj)
+    // pub fn update_user(&mut self, jjjjjjj)
 }
 
 #[derive(Serialize)]
-pub(crate) struct UserFromDB {
-    pub(crate) id: String,
-    pub(crate) username: String,
-
+pub struct UserFromDB {
+    pub id: String,
+    pub username: String,
     // do we want to store preferences on the server
-    pub(crate) serverside: bool,
+    pub serverside: bool,
     // store preferences for sending thumbnail data for low speed connections
-    pub(crate) thumbnails: bool,
+    pub thumbnails: bool,
     // auto play songs when done
-    pub(crate) autoplay: bool,
-
+    pub autoplay: bool,
     // allow people to follow
-    pub(crate) allow_followers: bool,
+    pub allow_followers: bool,
     // public profile that can be searched
-    pub(crate) public_account: bool,
+    pub public_account: bool,
     // show song activity
-    pub(crate) activity: bool,
+    pub activity: bool,
     // show last played
-    pub(crate) last_played: String,
+    pub last_played: String,
     // display nick name
-    pub(crate) display_name: String,
+    pub display_name: String,
     // id of followers
-    pub(crate) followers: String,
+    pub followers: String,
     // id of following
-    pub(crate) following: String,
+    pub following: String,
     // ids of liked songs
-    pub(crate) likes: String,
+    pub likes: String,
+    // ids of liked playlists
+    pub liked_playlist: String,
     // count to playback statistics
-    pub(crate) analytics: bool,
-    pub(crate) admin: bool,
-    pub(crate) lastupdate: String,
+    pub analytics: bool,
+    pub admin: bool,
+    pub lastupdate: String,
 }
 
 impl From<UserFromDB> for User {
@@ -181,6 +185,7 @@ impl From<UserFromDB> for User {
             followers: u.followers.split('`').map(|x| x.into()).collect(),
             following: u.following.split('`').map(|x| x.into()).collect(),
             likes: u.likes.split('`').map(|x| x.into()).collect(),
+            liked_playlist: u.liked_playlist.split('`').map(|x| x.into()).collect(),
             analytics: u.analytics,
             admin: u.admin,
             lastupdate: u.lastupdate.parse().unwrap_or(0),
@@ -205,6 +210,7 @@ impl From<User> for UserFromDB {
             followers: u.followers.join("`"),
             following: u.following.join("`"),
             likes: u.likes.join("`"),
+            liked_playlist: u.liked_playlist.join("`"),
             analytics: u.analytics,
             admin: u.admin,
             lastupdate: u.lastupdate.to_string(),
@@ -214,7 +220,7 @@ impl From<User> for UserFromDB {
 
 // no need to convert structs just to do a tiny operation
 impl UserFromDB {
-    pub(crate) fn now_playing(previous: &str, new_song: &str) -> String {
+    pub fn now_playing(previous: &str, new_song: &str) -> String {
         let cut = previous.find('`');
         if let Some(v) = cut {
             return if previous.matches('`').count() >= CONFIG.max_last_played {
@@ -225,14 +231,14 @@ impl UserFromDB {
         }
         previous.into()
     }
-    pub(crate) fn follow(previous: &str, follower: &str) -> String {
+    pub fn follow(previous: &str, follower: &str) -> String {
         if previous.is_empty() {
             follower.to_string()
         } else {
             format!("{previous}`{follower}")
         }
     }
-    pub(crate) fn unfollow(previous: &str, unfollower: &str) -> String {
+    pub fn unfollow(previous: &str, unfollower: &str) -> String {
         let mut new = previous.replace(unfollower, "").replace("``", "`");
         if new.starts_with('`') && new.len() > 1 {
             new = new[1..].to_string();
@@ -242,7 +248,7 @@ impl UserFromDB {
         }
         new
     }
-    pub(crate) async fn from_id(db: &mut PoolConnection<Sqlite>, id: &str) -> Option<Self> {
+    pub async fn from_id(db: &mut PoolConnection<Sqlite>, id: &str) -> Option<Self> {
         if let Ok(v) = query_as!(UserFromDB, "select * from users where id == $1", id)
             .fetch_optional(db)
             .await
@@ -252,10 +258,7 @@ impl UserFromDB {
         None
     }
 
-    pub(crate) async fn from_username(
-        db: &mut PoolConnection<Sqlite>,
-        username: &str,
-    ) -> Option<Self> {
+    pub async fn from_username(db: &mut PoolConnection<Sqlite>, username: &str) -> Option<Self> {
         if let Ok(v) = query_as!(
             UserFromDB,
             "select * from users where username == $1",
@@ -269,14 +272,14 @@ impl UserFromDB {
         None
     }
 
-    pub(crate) fn like(&mut self, id: &str) {
+    pub fn like(&mut self, id: &str) {
         if self.likes.is_empty() {
             self.likes = id.to_string();
         } else {
             self.likes = format!("{}`{id}", self.likes);
         }
     }
-    pub(crate) fn dislikes(&mut self, id: &str) {
+    pub fn dislikes(&mut self, id: &str) {
         let new = self.likes.replace(id, "").replace("``", "`");
         if new.starts_with('`') && new.len() > 1 {
             self.likes = new[1..].to_string();
@@ -287,42 +290,42 @@ impl UserFromDB {
     }
 }
 
-pub(crate) struct DownloadCache(VecDeque<(String, String)>);
+pub struct DownloadCache(VecDeque<(String, String)>);
 
 impl DownloadCache {
-    pub(crate) fn append(&mut self, url: String, user: String) {
+    pub fn append(&mut self, url: String, user: String) {
         self.0.push_front((url, user));
     }
-    pub(crate) async fn cycle(&mut self, db: &mut PoolConnection<Sqlite>) {
+    pub async fn cycle(&mut self, db: &mut PoolConnection<Sqlite>) {
         if let Some((url, _user)) = self.0.pop_back() {
             Song::from_url(&url, db).await;
         }
     }
-    pub(crate) fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.0.clear();
     }
-    pub(crate) fn list(&self) -> String {
+    pub fn list(&self) -> String {
         serde_json::to_string(&self.0).unwrap()
     }
 }
 
 #[derive(Serialize, Clone)]
-pub(crate) struct Song {
-    pub(crate) id: String,
-    pub(crate) title: String,
-    pub(crate) uploader: String,
-    pub(crate) artist: String,
-    pub(crate) genre: String,
-    pub(crate) album: String,
-    pub(crate) url: String,
-    pub(crate) duration: f64,
-    pub(crate) age_limit: i64,
-    pub(crate) webpage_url: String,
-    pub(crate) was_live: bool,
-    pub(crate) upload_date: String,
-    pub(crate) filesize: i64,
-    pub(crate) added_by: String,
-    pub(crate) default_search: String,
+pub struct Song {
+    pub id: String,
+    pub title: String,
+    pub uploader: String,
+    pub artist: String,
+    pub genre: String,
+    pub album: String,
+    pub url: String,
+    pub duration: f64,
+    pub age_limit: i64,
+    pub webpage_url: String,
+    pub was_live: bool,
+    pub upload_date: String,
+    pub filesize: i64,
+    pub added_by: String,
+    pub default_search: String,
 }
 
 #[derive(Debug, Display)]
@@ -348,7 +351,7 @@ impl<'a> Song {
         None
     }
     // yt-dlp --socket-timeout 3 --embed-thumbnail --audio-format mp3 --extract-audio --output "M3HhNcl2dMA.%(ext)s" --add-metadata --write-info-json https://www.youtube.com/watch\?v\=M3HhNcl2dMA
-    pub(crate) async fn from_url(url: &'a str, db: &mut PoolConnection<Sqlite>) -> Option<Song> {
+    pub async fn from_url(url: &'a str, db: &mut PoolConnection<Sqlite>) -> Option<Song> {
         if let Some(v) = Self::get_id(url) {
             let _ = fs::create_dir_all("./songs");
             let mut cmd = Command::new("yt-dlp");
@@ -461,69 +464,76 @@ values($1,
     }
 }
 
-pub(crate) struct SongSearch {
+pub struct SongSearch {
     songs: Vec<Song>,
 }
 
 impl SongSearch {
-    pub(crate) async fn load(db: &mut PoolConnection<Sqlite>) -> Self {
+    pub async fn load(db: &mut PoolConnection<Sqlite>) -> Self {
         let songs: Vec<Song> = query_as!(Song, "select * from songs")
             .fetch_all(db)
             .await
             .unwrap();
         Self { songs }
     }
-    pub(crate) async fn update(&mut self, db: &mut PoolConnection<Sqlite>) {
+    pub async fn update(&mut self, db: &mut PoolConnection<Sqlite>) {
         let songs: Vec<Song> = query_as!(Song, "select * from songs")
             .fetch_all(db)
             .await
             .unwrap();
         self.songs = songs;
     }
-    pub(crate) fn search(
-        &self,
-        term: &str,
-        search_type: SearchType,
-        amount: usize,
-    ) -> Vec<(&Song, f32)> {
+
+    #[inline]
+    pub fn search(&self, term: &str, search_type: SearchType, amount: usize) -> Vec<(&Song, f32)> {
         fuzzy_search_best_n(term, &self.songs, amount, &search_type)
     }
-    pub(crate) fn get_by_id(&self, id: &str) -> Vec<Song> {
-        self.songs
+
+    pub fn get_by_id(&self, id: &str) -> Option<Song> {
+        // TODO switch to rayon
+        let songs: Vec<Song> = self
+            .songs
             .iter()
             .filter(|x| Some(x.id.as_str()) == Some(id))
             .cloned()
-            .collect()
-    }
-    pub(crate) fn get(&self, name: Option<&str>, id: Option<&str>) -> Vec<Song> {
-        unimplemented!();
+            .collect();
+        songs.first().cloned()
     }
 }
 
 #[derive(Deserialize)]
-pub(crate) struct PlaylistDB {
-    pub(crate) name: String,
-    pub(crate) public_playlist: bool,
-    pub(crate) songs: String,
-    pub(crate) author: String,
-    pub(crate) author_id: String,
-    pub(crate) edit_list: String,
-    pub(crate) description: String,
-    pub(crate) likes: String,
-    pub(crate) cover: String,
-    pub(crate) duration: i64,
-    pub(crate) lastupdate: String,
+pub struct PlaylistDB {
+    pub name: String,
+    pub public_playlist: bool,
+    pub songs: String,
+    pub author: String,
+    pub author_id: String,
+    pub edit_list: String,
+    pub description: String,
+    pub likes: String,
+    pub cover: String,
+    pub duration: i64,
+    pub lastupdate: String,
+}
+
+#[derive(Deserialize)]
+pub struct PlaylistEditable {
+    name: String,
+    public_playlist: bool,
+    songs: Vec<String>,
+    description: String,
+    cover: String,
 }
 
 impl PlaylistDB {
-    pub(crate) fn like(previous: &str, follower: &str) -> String {
+    pub fn like(previous: &str, follower: &str) -> String {
         if previous.is_empty() {
             follower.to_string()
         } else {
             format!("{previous}`{follower}")
         }
     }
-    pub(crate) fn dislike(previous: &str, unfollower: &str) -> String {
+    pub fn dislike(previous: &str, unfollower: &str) -> String {
         let mut new = previous.replace(unfollower, "").replace("``", "`");
         if new.starts_with('`') && new.len() > 1 {
             new = new[1..].to_string();
@@ -532,6 +542,49 @@ impl PlaylistDB {
             new = new[..new.len() - 1].to_string();
         }
         new
+    }
+    pub fn update(playlist: &mut Self, data: PlaylistEditable) -> &mut Self {
+        playlist.name = data.name;
+        playlist.public_playlist = data.public_playlist;
+        playlist.songs = data.songs.join("`");
+        playlist.description = data.description;
+        playlist.cover = data.cover;
+        playlist
+    }
+    pub async fn update_playlist(
+        mut db: PoolConnection<Sqlite>,
+        data: &mut Self,
+    ) -> Result<(), PlaylistError> {
+        let current_playlist = match query_as!(
+            PlaylistDB,
+            "select * from playlist where author == $1 and name == $2",
+            data.author,
+            data.name
+        )
+        .fetch_optional(&mut db)
+        .await
+        {
+            Ok(Some(v)) => v,
+            _ => return Err(PlaylistError::NotExist),
+        };
+        let mut new_duration: f64 = 0.0;
+        if current_playlist.songs != data.songs {
+            for song in data.songs.split('`') {
+                if let Some(song) = SONG_SEARCH.get().await.get_by_id(song) {
+                    new_duration += song.duration;
+                } else {
+                    return Err(PlaylistError::InvalidSong);
+                }
+            }
+        }
+        data.duration = (new_duration + 0.5) as i64;
+        // let current_playlist: Playlist = current_playlist.into();
+        let result = query!("update playlist set public_playlist = $1, songs = $2, description = $3, likes = $4, cover = $5, duration = $6, lastupdate = $7, name = $8", data.public_playlist, data.songs, data.description, data.likes, data.cover, data.duration, data.lastupdate, data.name).execute(&mut db).await;
+        if result.is_ok() {
+            Ok(())
+        } else {
+            Err(PlaylistError::InvalidData)
+        }
     }
 }
 
@@ -554,18 +607,18 @@ impl From<Playlist> for PlaylistDB {
 }
 
 #[derive(Deserialize, Serialize)]
-pub(crate) struct Playlist {
-    pub(crate) name: String,
-    pub(crate) public_playlist: bool,
-    pub(crate) songs: Vec<String>,
-    pub(crate) author: String,
-    pub(crate) author_id: String,
-    pub(crate) edit_list: Vec<String>,
-    pub(crate) description: String,
-    pub(crate) likes: Vec<String>,
-    pub(crate) cover: String,
-    pub(crate) duration: i64,
-    pub(crate) lastupdate: u64,
+pub struct Playlist {
+    pub name: String,
+    pub public_playlist: bool,
+    pub songs: Vec<String>,
+    pub author: String,
+    pub author_id: String,
+    pub edit_list: Vec<String>,
+    pub description: String,
+    pub likes: Vec<String>,
+    pub cover: String,
+    pub duration: i64,
+    pub lastupdate: u64,
 }
 
 impl From<PlaylistDB> for Playlist {
@@ -586,80 +639,8 @@ impl From<PlaylistDB> for Playlist {
     }
 }
 
-pub(crate) enum PlaylistError {
+pub enum PlaylistError {
     NotExist,
     InvalidData,
-}
-
-impl Playlist {
-    pub(crate) async fn from_name(
-        db: &mut PoolConnection<Sqlite>,
-        name: &str,
-        user: &str,
-    ) -> Result<Self, ()> {
-        if let Ok(Some(v)) = query_as!(
-            PlaylistDB,
-            "select * from playlist where name == $1 and author == $2",
-            name,
-            user
-        )
-        .fetch_optional(db)
-        .await
-        {
-            return Ok(v.into());
-        }
-        Err(())
-    }
-
-    pub(crate) async fn get_playlists(
-        db: &mut PoolConnection<Sqlite>,
-        user: &str,
-    ) -> Result<Vec<Self>, ()> {
-        if let Ok(v) = query_as!(
-            PlaylistDB,
-            "select * from playlist where author == $2",
-            user
-        )
-        .fetch_all(db)
-        .await
-        {
-            return Ok(v.into_iter().map(|x| x.into()).collect());
-        }
-        Err(())
-    }
-
-    pub(crate) async fn update_playlist(
-        mut db: PoolConnection<Sqlite>,
-        data: Playlist,
-    ) -> Result<(), PlaylistError> {
-        let current_playlist = match query_as!(
-            PlaylistDB,
-            "select * from playlist where author == $1 and name == $2",
-            data.author,
-            data.name
-        )
-        .fetch_optional(&mut db)
-        .await
-        {
-            Ok(Some(v)) => v,
-            _ => return Err(PlaylistError::NotExist),
-        };
-        let mut data: PlaylistDB = data.into();
-        let mut new_duration: f64 = 0.0;
-        if current_playlist.songs != data.songs {
-            for song in data.songs.split('`') {
-                for song in SONG_SEARCH.get().await.get(None, Some(song)) {
-                    new_duration += song.duration;
-                }
-            }
-        }
-        data.duration = (new_duration + 0.5) as i64;
-        // let current_playlist: Playlist = current_playlist.into();
-        let result = query!("update playlist set public_playlist = $1, songs = $2, description = $3, likes = $4, cover = $5, duration = $6, lastupdate = $7", data.public_playlist, data.songs, data.description, data.likes, data.cover, data.duration, data.lastupdate).execute(&mut db).await;
-        if result.is_ok() {
-            Ok(())
-        } else {
-            Err(PlaylistError::InvalidData)
-        }
-    }
+    InvalidSong,
 }

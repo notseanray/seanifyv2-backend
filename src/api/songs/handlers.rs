@@ -35,7 +35,38 @@ pub async fn song_new(req: HttpRequest, claims: Claims) -> impl Responder {
 }
 
 #[get("/{song}/delete")]
-pub async fn song_delete(claims: Claims, req: HttpRequest, song: Path<String>) -> impl Responder {
+pub async fn song_delete_path(claims: Claims, song: Path<String>) -> impl Responder {
+    let mut db = fetch_db!();
+    let song = song.to_string();
+    if let Some(user) = UserFromDB::from_id(&mut db, &claims.sub).await {
+        if user.admin {
+            if query!("delete from songs where id == $1", song)
+                .execute(&mut db)
+                .await
+                .is_ok()
+            {
+                return HttpResponse::Ok();
+            }
+        } else {
+            if query!(
+                "delete from songs where added_by == $1 and id == $2",
+                claims.sub,
+                song,
+            )
+            .execute(&mut db)
+            .await
+            .is_ok()
+            {
+                return HttpResponse::Ok();
+            }
+            return HttpResponse::InternalServerError();
+        }
+    }
+    HttpResponse::BadRequest()
+}
+
+#[get("/delete")]
+pub async fn song_delete(claims: Claims, req: HttpRequest) -> impl Responder {
     let mut db = fetch_db!();
     if let Some(url) = req.headers().get("url") {
         if let (Some(user), Ok(url)) = (
@@ -152,8 +183,10 @@ pub async fn song_search(claims: Claims, req: HttpRequest) -> impl Responder {
             search_term.to_str(),
         ) {
             if let SearchType::Id = search_type {
-                return serde_json::to_string(&SONG_SEARCH.get().await.get_by_id(search_term))
-                    .unwrap();
+                return match &SONG_SEARCH.get().await.get_by_id(search_term) {
+                    Some(v) => serde_json::to_string(v).unwrap(),
+                    _ => String::from("{}"),
+                };
             }
             return serde_json::to_string(&SONG_SEARCH.get().await.search(
                 search_term,
@@ -163,5 +196,5 @@ pub async fn song_search(claims: Claims, req: HttpRequest) -> impl Responder {
             .unwrap();
         }
     }
-    String::from("BadRequest")
+    String::from("{}")
 }

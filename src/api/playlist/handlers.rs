@@ -27,6 +27,7 @@ pub async fn playlist_new(claims: Claims, req: HttpRequest) -> impl Responder {
         data.duration = 0;
         data.lastupdate = time!();
         data.cover.truncate(2000);
+        // TODO INSERT
         HttpResponse::Ok()
     } else {
         HttpResponse::BadRequest()
@@ -320,6 +321,58 @@ pub async fn playlist_delete(
                 {
                     Ok(_) => HttpResponse::Ok(),
                     _ => HttpResponse::Forbidden(),
+                };
+            }
+        }
+    }
+    HttpResponse::BadRequest()
+}
+
+#[get("/{username}/{playlist_name}/edit")]
+pub async fn playlist_edit(
+    username: Path<String>,
+    playlist_name: Path<String>,
+    req: HttpRequest,
+    claims: Claims,
+) -> impl Responder {
+    let mut db = fetch_db!();
+    let username = username.to_string();
+    if let (Some(u), Some(d)) = (
+        UserFromDB::from_id(&mut db, &claims.sub).await,
+        req.headers().get("data"),
+    ) {
+        let playlist_name = playlist_name.to_string();
+        // if they are requesting themself
+        let playlist = query_as!(
+            PlaylistDB,
+            "select * from playlist where author == $1 and name == $2",
+            username,
+            playlist_name,
+        )
+        .fetch_all(&mut db)
+        .await;
+        let d = d.to_str().unwrap_or_default();
+        if let (Ok(v), Ok(d)) = (playlist, serde_json::from_str(d)) {
+            let mut v: Vec<PlaylistDB> = v
+                .into_iter()
+                .filter_map(|x| {
+                    if x.author_id == claims.sub
+                        || x.edit_list.contains(&username)
+                        || x.public_playlist
+                        || u.admin
+                    {
+                        Some(x)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if let Some(v) = v.first_mut() {
+                let v = PlaylistDB::update(v, d);
+                return if PlaylistDB::update_playlist(db, v).await.is_ok() {
+                    HttpResponse::Ok()
+                } else {
+                    HttpResponse::BadRequest()
                 };
             }
         }

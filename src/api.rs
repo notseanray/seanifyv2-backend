@@ -34,6 +34,6 @@ macro_rules! time {
     };
 }
 
-pub(crate) struct BoolResult {
+pub struct BoolResult {
     admin: bool,
 }
