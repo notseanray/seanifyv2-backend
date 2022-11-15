@@ -2,20 +2,15 @@ use crate::extractors::Claims;
 use crate::fetch_db;
 use crate::fuzzy::SearchType;
 use crate::types::Song;
-use crate::types::SongSearch;
 use crate::types::UserFromDB;
 use crate::DB;
+use crate::DOWNLOAD_CACHE;
 use crate::SONG_SEARCH;
-use actix_web::{
-    get,
-    web::{self, Data},
-    Responder,
-};
+use actix_web::{get, web, Responder};
 use actix_web::{HttpRequest, HttpResponse};
-use async_once::AsyncOnce;
 use web::Path;
 
-use sqlx::{query, query_as};
+use sqlx::query;
 
 #[get("/new")]
 pub async fn song_new(req: HttpRequest, claims: Claims) -> impl Responder {
@@ -25,11 +20,29 @@ pub async fn song_new(req: HttpRequest, claims: Claims) -> impl Responder {
             UserFromDB::from_id(&mut db, &claims.sub).await,
             url.to_str(),
         ) {
-            let song = Song::from_url(url, &mut db).await;
-            if song.is_some() {
-                return HttpResponse::Ok();
-            }
+            DOWNLOAD_CACHE
+                .lock()
+                .unwrap()
+                .append(url.to_string(), user.id);
+            // let song = Song::from_url(url, &mut db, user.id).await;
+            // if let Some(_v) = song {
+            //     // TODO return JSON?
+            //     return HttpResponse::Ok();
+            // }
+            return HttpResponse::Ok();
         }
+    }
+    HttpResponse::BadRequest()
+}
+
+#[get("/clear_cache")]
+pub async fn clear_cache(claims: Claims) -> impl Responder {
+    let mut db = fetch_db!();
+    if let Some(user) = UserFromDB::from_id(&mut db, &claims.sub).await {
+        if !user.admin {
+            return HttpResponse::BadRequest();
+        }
+        DOWNLOAD_CACHE.lock().unwrap().clear();
     }
     HttpResponse::BadRequest()
 }
@@ -183,12 +196,18 @@ pub async fn song_search(claims: Claims, req: HttpRequest) -> impl Responder {
             search_term.to_str(),
         ) {
             if let SearchType::Id = search_type {
-                return match &SONG_SEARCH.get().await.get_by_id(search_term) {
+                return match &SONG_SEARCH
+                    .get()
+                    .await
+                    .write()
+                    .unwrap()
+                    .get_by_id(search_term)
+                {
                     Some(v) => serde_json::to_string(v).unwrap(),
                     _ => String::from("{}"),
                 };
             }
-            return serde_json::to_string(&SONG_SEARCH.get().await.search(
+            return serde_json::to_string(&SONG_SEARCH.get().await.write().unwrap().search(
                 search_term,
                 search_type,
                 search_count,

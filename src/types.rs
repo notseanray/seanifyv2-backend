@@ -1,13 +1,13 @@
 use crate::{
+    fetch_db,
     fuzzy::{fuzzy_search_best_n, SearchType},
     youtube::VideoData,
-    CONFIG, SONG_SEARCH,
+    CONFIG, DB, SONG_SEARCH,
 };
 use anyhow::{anyhow, Result};
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use sqlx::{pool::PoolConnection, query, query_as, Sqlite};
-use std::error::Error;
 use std::{collections::VecDeque, fs, process::Command};
 
 // The number of songs that we report back with last played
@@ -290,6 +290,7 @@ impl UserFromDB {
     }
 }
 
+#[derive(Default)]
 pub struct DownloadCache(VecDeque<(String, String)>);
 
 impl DownloadCache {
@@ -297,8 +298,9 @@ impl DownloadCache {
         self.0.push_front((url, user));
     }
     pub async fn cycle(&mut self, db: &mut PoolConnection<Sqlite>) {
-        if let Some((url, _user)) = self.0.pop_back() {
-            Song::from_url(&url, db).await;
+        if let Some((url, user)) = self.0.pop_back() {
+            // TODO ws broadcast
+            Song::from_url(&url, db, user).await;
         }
     }
     pub fn clear(&mut self) {
@@ -351,7 +353,11 @@ impl<'a> Song {
         None
     }
     // yt-dlp --socket-timeout 3 --embed-thumbnail --audio-format mp3 --extract-audio --output "M3HhNcl2dMA.%(ext)s" --add-metadata --write-info-json https://www.youtube.com/watch\?v\=M3HhNcl2dMA
-    pub async fn from_url(url: &'a str, db: &mut PoolConnection<Sqlite>) -> Option<Song> {
+    pub async fn from_url(
+        url: &'a str,
+        db: &mut PoolConnection<Sqlite>,
+        user: String,
+    ) -> Option<Song> {
         if let Some(v) = Self::get_id(url) {
             let _ = fs::create_dir_all("./songs");
             let mut cmd = Command::new("yt-dlp");
@@ -371,19 +377,33 @@ impl<'a> Song {
                 url,
             ]);
             let cmd = cmd.output().expect("yt dlp not installed");
-            if let (true, Ok(s)) = (cmd.status.success(), Self::insert(v, db, url).await) {
+            if let (true, Ok(s)) = (
+                cmd.status.success(),
+                Self::insert(v.to_string(), db, url, user).await,
+            ) {
                 // ws msg
+                let mut db = fetch_db!();
+                SONG_SEARCH.get().await.write().unwrap().update(&mut db);
+                None
+            } else {
+                None
             }
+        } else {
+            None
         }
-        None
     }
     // pass in db handle from from_url
-    async fn insert(id: &str, db: &mut PoolConnection<Sqlite>, url: &str) -> Result<Song> {
+    async fn insert(
+        id: String,
+        db: &mut PoolConnection<Sqlite>,
+        url: &str,
+        user_id: String,
+    ) -> Result<Song> {
         let meta = match mp3_metadata::read_from_file(format!("songs/{id}.mp3")) {
             Ok(v) => v,
             _ => return Err(anyhow!("Failed to extract metadata")),
         };
-        let data = VideoData::load_and_replace(id)?;
+        let data = VideoData::load_and_replace(&id)?;
         if let Some(tag) = meta.tag {
             let artist = if tag.artist.is_empty() {
                 data.uploader.clone()
@@ -392,7 +412,7 @@ impl<'a> Song {
             };
             let new_song = Self {
                 default_search: format!("{} {} {}", &data.title, &tag.artist, &tag.album),
-                id: id.to_string(),
+                id,
                 title: data.title,
                 uploader: data.uploader,
                 url: url.to_string(),
@@ -405,40 +425,40 @@ impl<'a> Song {
                 was_live: data.was_live,
                 upload_date: data.upload_date,
                 filesize: data.filesize,
-                added_by: id.to_string(),
+                added_by: user_id,
             };
             let _ = query!(
                 r#"insert into songs(
-    id,
-    title,
-    uploader,
-    artist,
-    genre,
-    album,
-    url,
-    duration,
-    age_limit,
-    webpage_url,
-    was_live,
-    upload_date,
-    filesize,
-    added_by,
-    default_search)
-values($1,
-       $2,
-       $3,
-       $4,
-       $5,
-       $6,
-       $7,
-       $8,
-       $9,
-       $10,
-       $11,
-       $12,
-       $13,
-       $14,
-   $15)"#,
+                    id,
+                    title,
+                    uploader,
+                    artist,
+                    genre,
+                    album,
+                    url,
+                    duration,
+                    age_limit,
+                    webpage_url,
+                    was_live,
+                    upload_date,
+                    filesize,
+                    added_by,
+                    default_search)
+                values($1,
+                       $2,
+                       $3,
+                       $4,
+                       $5,
+                       $6,
+                       $7,
+                       $8,
+                       $9,
+                       $10,
+                       $11,
+                       $12,
+                       $13,
+                       $14,
+                   $15)"#,
                 new_song.id,
                 new_song.title,
                 new_song.uploader,
@@ -570,7 +590,7 @@ impl PlaylistDB {
         let mut new_duration: f64 = 0.0;
         if current_playlist.songs != data.songs {
             for song in data.songs.split('`') {
-                if let Some(song) = SONG_SEARCH.get().await.get_by_id(song) {
+                if let Some(song) = SONG_SEARCH.get().await.write().unwrap().get_by_id(song) {
                     new_duration += song.duration;
                 } else {
                     return Err(PlaylistError::InvalidSong);

@@ -9,8 +9,7 @@ use actix_cors::Cors;
 use actix_web::{App, HttpServer, Scope};
 use dotenv::dotenv;
 
-use crate::types::Config;
-use crate::types::SongSearch;
+use crate::types::{Config, DownloadCache, SongSearch};
 use actix::{Actor, StreamHandler};
 use actix_web::{get, web, Error as ActixError, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
@@ -18,7 +17,7 @@ use async_once::AsyncOnce;
 use lazy_static::lazy_static;
 use log::{error, info};
 use sqlx::{Pool, Sqlite};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, RwLock};
 use std::{error::Error, time::Duration};
 
 pub(crate) const VERSION: &str = "0.1.0";
@@ -33,9 +32,13 @@ lazy_static! {
                 .expect("failed to check database url"),
         })
     });
-    pub(crate) static ref SONG_SEARCH: AsyncOnce<SongSearch> = AsyncOnce::new(async {
-        SongSearch::load(&mut (*DB.get().await).db.try_acquire().unwrap()).await
+    pub(crate) static ref SONG_SEARCH: AsyncOnce<Arc<RwLock<SongSearch>>> = AsyncOnce::new(async {
+        Arc::new(RwLock::new(
+            SongSearch::load(&mut (*DB.get().await).db.try_acquire().unwrap()).await,
+        ))
     });
+    pub(crate) static ref DOWNLOAD_CACHE: Arc<Mutex<DownloadCache>> =
+        Arc::new(Mutex::new(DownloadCache::default()));
 }
 
 struct Database {

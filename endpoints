@@ -71,3 +71,7 @@ Users
     /taken
      db fetch
      json
+
+ws operations
+    play, pause, skip for client
+    song broadcast
