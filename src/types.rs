@@ -279,7 +279,7 @@ impl UserFromDB {
             self.likes = format!("{}`{id}", self.likes);
         }
     }
-    pub fn dislikes(&mut self, id: &str) {
+    pub fn dislike(&mut self, id: &str) {
         let new = self.likes.replace(id, "").replace("``", "`");
         if new.starts_with('`') && new.len() > 1 {
             self.likes = new[1..].to_string();
