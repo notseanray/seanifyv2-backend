@@ -1,12 +1,15 @@
 use crate::extractors::Claims;
+use crate::types::Song;
 use crate::fetch_db;
 use crate::fuzzy::SearchType;
 use crate::types::UserFromDB;
 use crate::DB;
 use crate::DOWNLOAD_CACHE;
 use crate::SONG_SEARCH;
+use actix_web::HttpResponseBuilder;
 use actix_web::{get, web, Responder};
 use actix_web::{HttpRequest, HttpResponse};
+use reqwest::StatusCode;
 use sqlx::query_as;
 use web::Path;
 
@@ -57,7 +60,7 @@ pub async fn song_delete_path(claims: Claims, song: Path<String>) -> impl Respon
         return HttpResponse::Forbidden();
     };
     if user.admin {
-        if query!("delete from songs where id == $1", song)
+        if query!("delete from songs where id = $1", song)
             .execute(&mut db)
             .await
             .is_ok()
@@ -65,7 +68,7 @@ pub async fn song_delete_path(claims: Claims, song: Path<String>) -> impl Respon
             return HttpResponse::Ok();
         }
     } else if query!(
-        "delete from songs where added_by == $1 and id == $2",
+        "delete from songs where added_by = $1 and id = $2",
         claims.sub,
         song,
     )
@@ -89,7 +92,7 @@ pub async fn song_delete(claims: Claims, req: HttpRequest) -> impl Responder {
             return HttpResponse::BadRequest();
         };
         if user.admin {
-            if query!("delete from songs where url == $1", url)
+            if query!("delete from songs where url = $1", url)
                 .execute(&mut db)
                 .await
                 .is_ok()
@@ -97,7 +100,7 @@ pub async fn song_delete(claims: Claims, req: HttpRequest) -> impl Responder {
                 return HttpResponse::Ok();
             }
         } else if query!(
-            "delete from songs where added_by == $1 and url == $2",
+            "delete from songs where added_by = $1 and url = $2",
             claims.sub,
             url
         )
@@ -117,7 +120,7 @@ pub async fn song_delete(claims: Claims, req: HttpRequest) -> impl Responder {
             return HttpResponse::Forbidden();
         };
         if user.admin {
-            if query!("delete from songs where title == $1", title)
+            if query!("delete from songs where title = $1", title)
                 .execute(&mut db)
                 .await
                 .is_ok()
@@ -125,7 +128,7 @@ pub async fn song_delete(claims: Claims, req: HttpRequest) -> impl Responder {
                 return HttpResponse::Ok();
             }
         } else if query!(
-            "delete from songs where added_by == $1 and title == $2",
+            "delete from songs where added_by = $1 and title = $2",
             claims.sub,
             title
         )
@@ -160,18 +163,20 @@ pub async fn song_dislike(claims: Claims, song: Path<String>) -> impl Responder 
     HttpResponse::Ok()
 }
 
-#[get("/list")]
-pub async fn song_list(claims: Claims) -> impl Responder {
-    let mut db = fetch_db!();
-    let Some(_u) = UserFromDB::from_id(&mut db, &claims.sub).await else {
-        return HttpResponse::Forbidden();
-    };
-    let songs = query_as!(Vec<Song>, "select * from songs")
-        .fetch_all(&mut db)
-        .await
-        .unwrap();
-    // TODO STREAM RESPONSE
-}
+// #[get("/list")]
+// pub async fn song_list(claims: Claims) -> impl Responder {
+//     let mut db = fetch_db!();
+//     let Some(_u) = UserFromDB::from_id(&mut db, &claims.sub).await else {
+//         unreachable!();
+//     };
+//     let songs = query_as!(Song, "select * from songs")
+//         .fetch_all(&mut db)
+//         .await
+//         .unwrap();
+//     // TODO STREAM RESPONSE
+//     let response = songs.into_iter().map(|x| serde_json::to_string(&x).unwrap_or_default().as_bytes());
+//     HttpResponseBuilder::new(StatusCode::OK).streaming::<u8, std::io::Error>(response.into())
+// }
 
 #[get("/search")]
 pub async fn song_search(claims: Claims, req: HttpRequest) -> impl Responder {

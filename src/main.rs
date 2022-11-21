@@ -16,7 +16,7 @@ use actix_web_actors::ws;
 use async_once::AsyncOnce;
 use lazy_static::lazy_static;
 use log::{error, info};
-use sqlx::{Pool, Sqlite};
+use sqlx::{Pool, Postgres};
 use std::sync::{Arc, Mutex, RwLock};
 use std::{error::Error, time::Duration};
 
@@ -42,7 +42,7 @@ lazy_static! {
 }
 
 struct Database {
-    db: Pool<Sqlite>,
+    db: Pool<Postgres>,
 }
 
 struct Ws;
@@ -115,11 +115,11 @@ async fn main() -> std::io::Result<()> {
 }
 
 impl Database {
-    pub(crate) async fn setup(uri: &str, timeout: u64) -> Result<Pool<Sqlite>, Box<dyn Error>> {
+    pub(crate) async fn setup(uri: &str, timeout: u64) -> Result<Pool<Postgres>, Box<dyn Error>> {
         Ok(Self::try_connect(uri, timeout).await)
     }
 
-    pub async fn try_connect(uri: &str, timeout: u64) -> Pool<Sqlite> {
+    pub async fn try_connect(uri: &str, timeout: u64) -> Pool<Postgres> {
         for i in 1..6 {
             match Self::connect(uri).await {
                 Ok(v) => return v,
@@ -131,8 +131,7 @@ impl Database {
         std::process::exit(1);
     }
 
-    async fn connect(uri: &str) -> Result<Pool<Sqlite>, Box<dyn Error>> {
-        // let connect_opts = SqliteConnectOptions::new().create_if_missing(true);
-        Ok(Pool::<Sqlite>::connect(uri).await?)
+    async fn connect(uri: &str) -> Result<Pool<Postgres>, Box<dyn Error>> {
+        Ok(Pool::<Postgres>::connect(uri).await?)
     }
 }

@@ -1,6 +1,5 @@
 use crate::extractors::Claims;
-use crate::types::UserFromDB;
-use crate::types::{Playlist, PlaylistDB};
+use crate::types::{Playlist, User};
 use crate::DB;
 use crate::{fetch_db, time};
 use actix_web::{get, web, Responder};
@@ -14,7 +13,7 @@ use sqlx::{query, query_as};
 pub async fn playlist_new(claims: Claims, req: HttpRequest) -> impl Responder {
     let (Some(v), Some(u)) = (
         req.headers().get("data"),
-        UserFromDB::from_id(&mut fetch_db!(), &claims.sub).await,
+        User::from_id(&mut fetch_db!(), &claims.sub).await,
     ) else {
         return HttpResponse::Forbidden();
     };
@@ -36,12 +35,12 @@ pub async fn playlist_new(claims: Claims, req: HttpRequest) -> impl Responder {
 pub async fn playlist_user_data(username: Path<String>, claims: Claims) -> impl Responder {
     let username = username.to_string();
     let mut db = fetch_db!();
-    let Some(u) = UserFromDB::from_id(&mut db, &claims.sub).await else {
+    let Some(u) = User::from_id(&mut db, &claims.sub).await else {
         return "[]".to_string();
     };
     let playlist = query_as!(
-        PlaylistDB,
-        "select * from playlist where author == $1",
+        Playlist,
+        "select * from playlist where author = $1",
         username,
     )
     .fetch_all(&mut db)
@@ -75,14 +74,14 @@ pub async fn playlist_hash(
 ) -> impl Responder {
     let mut db = fetch_db!();
     let username = username.to_string();
-    let Some(u) = UserFromDB::from_id(&mut db, &claims.sub).await else {
+    let Some(u) = User::from_id(&mut db, &claims.sub).await else {
         return String::new();
     };
     let playlist_name = playlist_name.to_string();
     // if they are requesting themself
     let playlist = query_as!(
-        PlaylistDB,
-        "select * from playlist where author == $1 and name == $2",
+        Playlist,
+        "select * from playlist where author = $1 and name = $2",
         username,
         playlist_name,
     )
@@ -120,15 +119,15 @@ pub async fn playlist_data(
     claims: Claims,
 ) -> impl Responder {
     let mut db = fetch_db!();
-    let Some(_u) = UserFromDB::from_id(&mut db, &claims.sub).await else {
+    let Some(_u) = User::from_id(&mut db, &claims.sub).await else {
         return String::new();
     };
     let playlist_name = playlist_name.to_string();
     let username = username.to_string();
     // if they are requesting themself
     let playlist = query_as!(
-        PlaylistDB,
-        "select * from playlist where author == $1 and name == $2",
+        Playlist,
+        "select * from playlist where author = $1 and name = $2",
         username,
         playlist_name
     )
@@ -160,13 +159,13 @@ pub async fn playlist_like(
     let playlist_name = playlist_name.to_string();
     let username = username.to_string();
     let mut db = fetch_db!();
-    let Some(u) = UserFromDB::from_id(&mut db, &claims.sub).await else {
+    let Some(u) = User::from_id(&mut db, &claims.sub).await else {
         return HttpResponse::Forbidden();
     };
     // if they are requesting themself
     let playlist = query_as!(
-        PlaylistDB,
-        "select * from playlist where author == $1 and name == $2",
+        Playlist,
+        "select * from playlist where author = $1 and name = $2",
         username,
         playlist_name,
     )
@@ -175,7 +174,7 @@ pub async fn playlist_like(
     let Ok(Some(v)) = playlist else {
         return HttpResponse::BadRequest();
     };
-    let followers = PlaylistDB::like(&v.likes, &claims.sub);
+    let followers = Playlist::like(&v.likes, &claims.sub);
     let v: Playlist = v.into();
     if !(v.author_id == claims.sub
         || v.edit_list.contains(&claims.sub)
@@ -185,7 +184,7 @@ pub async fn playlist_like(
         return HttpResponse::Forbidden();
     }
     if query!(
-        "update playlist set likes = $1 where author == $2 and name == $3",
+        "update playlist set likes = $1 where author = $2 and name = $3",
         followers,
         username,
         playlist_name
@@ -209,13 +208,13 @@ pub async fn playlist_dislike(
     let playlist_name = playlist_name.to_string();
     let username = username.to_string();
     let mut db = fetch_db!();
-    let Some(u) = UserFromDB::from_id(&mut db, &claims.sub).await else {
+    let Some(u) = User::from_id(&mut db, &claims.sub).await else {
         return HttpResponse::Forbidden();
     };
     // if they are requesting themself
     let playlist = query_as!(
-        PlaylistDB,
-        "select * from playlist where author == $1 and name == $2",
+        Playlist,
+        "select * from playlist where author = $1 and name = $2",
         username,
         playlist_name,
     )
@@ -224,7 +223,7 @@ pub async fn playlist_dislike(
     let Ok(Some(v)) = playlist else {
         return HttpResponse::BadRequest();
     };
-    let followers = PlaylistDB::dislike(&v.likes, &claims.sub);
+    let followers = Playlist::dislike(&v.likes, &claims.sub);
     let v: Playlist = v.into();
     if !(v.author_id == claims.sub
         || v.edit_list.contains(&claims.sub)
@@ -234,7 +233,7 @@ pub async fn playlist_dislike(
         return HttpResponse::Forbidden();
     }
     if query!(
-        "update playlist set likes = $1 where author == $2 and name == $3",
+        "update playlist set likes = $1 where author = $2 and name = $3",
         followers,
         username,
         playlist_name
@@ -258,13 +257,13 @@ pub async fn playlist_add(
     let playlist_name = playlist_name.to_string();
     let username = username.to_string();
     let mut db = fetch_db!();
-    let Some(u) = UserFromDB::from_id(&mut db, &claims.sub).await else {
+    let Some(u) = User::from_id(&mut db, &claims.sub).await else {
         return HttpResponse::Forbidden();
     };
     // if they are requesting themself
     let playlist = query_as!(
-        PlaylistDB,
-        "select * from playlist where author == $1 and name == $2",
+        Playlist,
+        "select * from playlist where author = $1 and name = $2",
         username,
         playlist_name,
     )
@@ -273,7 +272,7 @@ pub async fn playlist_add(
     let Ok(Some(v)) = playlist else {
         return HttpResponse::BadRequest();
     };
-    let followers = PlaylistDB::dislike(&v.likes, &claims.sub);
+    let followers = Playlist::dislike(&v.likes, &claims.sub);
     if !(v.author_id == claims.sub
         || v.edit_list.contains(&claims.sub)
         || v.public_playlist
@@ -282,7 +281,7 @@ pub async fn playlist_add(
         return HttpResponse::Forbidden();
     }
     if query!(
-        "update playlist set likes = $1 where author == $2 and name == $3",
+        "update playlist set likes = $1 where author = $2 and name = $3",
         followers,
         username,
         playlist_name
@@ -305,13 +304,13 @@ pub async fn playlist_delete(
     let playlist_name = playlist_name.to_string();
     let username = username.to_string();
     let mut db = fetch_db!();
-    let Some(u) = UserFromDB::from_id(&mut db, &claims.sub).await else {
+    let Some(u) = User::from_id(&mut db, &claims.sub).await else {
         return HttpResponse::Forbidden();
     };
     // if they are requesting themself
     let playlist = query_as!(
-        PlaylistDB,
-        "select * from playlist where author == $1 and name == $2",
+        Playlist,
+        "select * from playlist where author = $1 and name = $2",
         username,
         playlist_name,
     )
@@ -322,7 +321,7 @@ pub async fn playlist_delete(
     };
     if v.author_id == claims.sub || u.admin {
         return match query!(
-            "delete from playlist where author == $1 and name == $2",
+            "delete from playlist where author = $1 and name = $2",
             username,
             playlist_name
         )
@@ -346,7 +345,7 @@ pub async fn playlist_edit(
     let mut db = fetch_db!();
     let username = username.to_string();
     let (Some(u), Some(d)) = (
-        UserFromDB::from_id(&mut db, &claims.sub).await,
+        User::from_id(&mut db, &claims.sub).await,
         req.headers().get("data"),
     ) else {
         return HttpResponse::Forbidden();
@@ -354,8 +353,8 @@ pub async fn playlist_edit(
     let playlist_name = playlist_name.to_string();
     // if they are requesting themself
     let playlist = query_as!(
-        PlaylistDB,
-        "select * from playlist where author == $1 and name == $2",
+        Playlist,
+        "select * from playlist where author = $1 and name = $2",
         username,
         playlist_name,
     )
@@ -365,7 +364,7 @@ pub async fn playlist_edit(
     let (Ok(v), Ok(d)) = (playlist, serde_json::from_str(d)) else {
         return HttpResponse::BadRequest();
     };
-    let mut v: Vec<PlaylistDB> = v
+    let mut v: Vec<Playlist> = v
         .into_iter()
         .filter_map(|x| {
             if x.author_id == claims.sub
@@ -382,8 +381,8 @@ pub async fn playlist_edit(
     let Some(v) = v.first_mut() else {
         return HttpResponse::BadRequest();
     };
-    let v = PlaylistDB::update(v, d);
-    if PlaylistDB::update_playlist(db, v).await.is_ok() {
+    let v = Playlist::update(v, d);
+    if Playlist::update_playlist(db, v).await.is_ok() {
         HttpResponse::Ok()
     } else {
         HttpResponse::BadRequest()

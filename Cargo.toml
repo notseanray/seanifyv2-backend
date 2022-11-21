@@ -22,7 +22,7 @@ jsonwebtoken = "^8.1.1"
 serde = "1.0.144"
 serde_json = "1.0.85"
 futures = "0.3.24"
-sqlx = { version = "0.6.1", features = ["runtime-tokio-rustls", "sqlite", "macros"] }
+sqlx = { version = "0.6.1", features = ["runtime-tokio-rustls", "postgres", "macros"] }
 lazy_static = "1.4.0"
 mp3-metadata = "0.3.4"
 anyhow = "1.0.65"

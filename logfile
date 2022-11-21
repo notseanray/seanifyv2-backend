@@ -1,0 +1,12 @@
+2022-11-20 20:23:16.244 EST [127148] LOG:  starting PostgreSQL 14.5 on x86_64-pc-linux-gnu, compiled by gcc (GCC) 12.2.0, 64-bit
+2022-11-20 20:23:16.245 EST [127148] LOG:  listening on IPv6 address "::1", port 5432
+2022-11-20 20:23:16.245 EST [127148] LOG:  listening on IPv4 address "127.0.0.1", port 5432
+2022-11-20 20:23:16.254 EST [127148] LOG:  listening on Unix socket "/run/postgresql/.s.PGSQL.5432"
+2022-11-20 20:23:16.274 EST [127149] LOG:  database system was shut down at 2022-11-20 20:23:10 EST
+2022-11-20 20:23:16.286 EST [127148] LOG:  database system is ready to accept connections
+2022-11-20 20:37:16.973 EST [127148] LOG:  could not open file "postmaster.pid": No such file or directory
+2022-11-20 20:37:16.973 EST [127148] LOG:  performing immediate shutdown because data directory lock file is invalid
+2022-11-20 20:37:16.973 EST [127148] LOG:  received immediate shutdown request
+2022-11-20 20:37:16.973 EST [127148] LOG:  could not open file "postmaster.pid": No such file or directory
+2022-11-20 20:37:16.974 EST [127154] LOG:  could not open temporary statistics file "pg_stat/global.tmp": No such file or directory
+2022-11-20 20:37:16.978 EST [127148] LOG:  database system is shut down
