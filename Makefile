@@ -25,6 +25,11 @@ prepare:
 	-cp .env ../seanify
 	cd ../seanify && pg_ctl --port=$(PORT) -D $(DBNAME) -l logfile start
 
+startdb:
+	-cd ../seanify && pg_ctl -o "-F -p $(PORT)" -D $(DBNAME) -l logfile start
+	-cd ../seanify && postgres -D $(DBNAME) --port=$(PORT) 2>&1 &
+	-cd ../seanify && createdb --port=6000 $(DBNAME)
+
 clean:
 	-rm -rf ../seanify/$(DBNAME)
 

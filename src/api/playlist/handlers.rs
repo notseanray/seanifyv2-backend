@@ -171,11 +171,10 @@ pub async fn playlist_like(
     )
     .fetch_optional(&mut db)
     .await;
-    let Ok(Some(v)) = playlist else {
+    let Ok(Some(mut v)) = playlist else {
         return HttpResponse::BadRequest();
     };
-    let followers = Playlist::like(&v.likes, &claims.sub);
-    let v: Playlist = v.into();
+    v.like(claims.sub.to_string());
     if !(v.author_id == claims.sub
         || v.edit_list.contains(&claims.sub)
         || v.public_playlist
@@ -185,7 +184,7 @@ pub async fn playlist_like(
     }
     if query!(
         "update playlist set likes = $1 where author = $2 and name = $3",
-        followers,
+        &v.likes,
         username,
         playlist_name
     )
@@ -220,11 +219,10 @@ pub async fn playlist_dislike(
     )
     .fetch_optional(&mut db)
     .await;
-    let Ok(Some(v)) = playlist else {
+    let Ok(Some(mut v)) = playlist else {
         return HttpResponse::BadRequest();
     };
-    let followers = Playlist::dislike(&v.likes, &claims.sub);
-    let v: Playlist = v.into();
+    let followers = v.dislike(&claims.sub);
     if !(v.author_id == claims.sub
         || v.edit_list.contains(&claims.sub)
         || v.public_playlist
@@ -234,7 +232,7 @@ pub async fn playlist_dislike(
     }
     if query!(
         "update playlist set likes = $1 where author = $2 and name = $3",
-        followers,
+        &v.likes,
         username,
         playlist_name
     )
@@ -248,19 +246,28 @@ pub async fn playlist_dislike(
     }
 }
 
-#[get("/{username}/{playlist_name}/add")]
-pub async fn playlist_add(
+#[get("/{username}/{playlist_name}/remove")]
+pub async fn playlist_remove(
+    req: HttpRequest,
     username: Path<String>,
     playlist_name: Path<String>,
     claims: Claims,
 ) -> impl Responder {
+    let Some(songs_to_remove) = req.headers().get("songs") else {
+        return HttpResponse::BadRequest();
+    };
+    let Ok(songs_to_remove) = songs_to_remove.to_str() else {
+        return HttpResponse::BadRequest();
+    };
+    let Ok(songs_to_remove): Result<Vec<String>, _> = serde_json::from_str(&songs_to_remove) else {
+        return HttpResponse::BadRequest();
+    };
     let playlist_name = playlist_name.to_string();
     let username = username.to_string();
     let mut db = fetch_db!();
     let Some(u) = User::from_id(&mut db, &claims.sub).await else {
         return HttpResponse::Forbidden();
     };
-    // if they are requesting themself
     let playlist = query_as!(
         Playlist,
         "select * from playlist where author = $1 and name = $2",
@@ -269,20 +276,13 @@ pub async fn playlist_add(
     )
     .fetch_optional(&mut db)
     .await;
-    let Ok(Some(v)) = playlist else {
+    let Ok(Some(mut v)) = playlist else {
         return HttpResponse::BadRequest();
     };
-    let followers = Playlist::dislike(&v.likes, &claims.sub);
-    if !(v.author_id == claims.sub
-        || v.edit_list.contains(&claims.sub)
-        || v.public_playlist
-        || u.admin)
-    {
-        return HttpResponse::Forbidden();
-    }
+    v.songs.retain(|x| !songs_to_remove.contains(x));
     if query!(
-        "update playlist set likes = $1 where author = $2 and name = $3",
-        followers,
+        "update playlist set songs = $1 where author = $2 and name = $3",
+        &v.songs,
         username,
         playlist_name
     )
@@ -290,9 +290,60 @@ pub async fn playlist_add(
     .await
     .is_ok()
     {
-        return HttpResponse::Ok();
+        HttpResponse::Ok()
+    } else {
+        HttpResponse::BadRequest()
     }
-    HttpResponse::BadRequest()
+}
+
+#[get("/{username}/{playlist_name}/add")]
+pub async fn playlist_add(
+    req: HttpRequest,
+    username: Path<String>,
+    playlist_name: Path<String>,
+    claims: Claims,
+) -> impl Responder {
+    let Some(songs_to_add) = req.headers().get("songs") else {
+        return HttpResponse::BadRequest();
+    };
+    let Ok(songs_to_add) = songs_to_add.to_str() else {
+        return HttpResponse::BadRequest();
+    };
+    let Ok(mut songs_to_add): Result<Vec<String>, _> = serde_json::from_str(&songs_to_add) else {
+        return HttpResponse::BadRequest();
+    };
+    let playlist_name = playlist_name.to_string();
+    let username = username.to_string();
+    let mut db = fetch_db!();
+    let Some(u) = User::from_id(&mut db, &claims.sub).await else {
+        return HttpResponse::Forbidden();
+    };
+    let playlist = query_as!(
+        Playlist,
+        "select * from playlist where author = $1 and name = $2",
+        username,
+        playlist_name,
+    )
+    .fetch_optional(&mut db)
+    .await;
+    let Ok(Some(mut v)) = playlist else {
+        return HttpResponse::BadRequest();
+    };
+    v.songs.append(&mut songs_to_add);
+    if query!(
+        "update playlist set songs = $1 where author = $2 and name = $3",
+        &v.songs,
+        username,
+        playlist_name
+    )
+    .execute(&mut db)
+    .await
+    .is_ok()
+    {
+        HttpResponse::Ok()
+    } else {
+        HttpResponse::BadRequest()
+    }
 }
 
 #[get("/{username}/{playlist_name}/delete")]

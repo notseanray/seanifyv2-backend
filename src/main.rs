@@ -17,8 +17,9 @@ use async_once::AsyncOnce;
 use lazy_static::lazy_static;
 use log::{error, info};
 use sqlx::{Pool, Postgres};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::{error::Error, time::Duration};
+use tokio::sync::RwLock;
 
 pub(crate) const VERSION: &str = "0.1.0";
 pub(crate) const BRANCH: &str = "main";

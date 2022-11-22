@@ -1,7 +1,7 @@
 use crate::api::types::{Message, Metadata};
 use crate::api::BoolResult;
 use crate::extractors::Claims;
-use crate::types::{User, User};
+use crate::types::User;
 use crate::DB;
 use crate::{fetch_db, response};
 use crate::{time, BRANCH, VERSION};
@@ -9,7 +9,6 @@ use actix_web::{get, web, Responder};
 use actix_web::{HttpRequest, HttpResponse};
 use reqwest::StatusCode;
 use sqlx::{pool::PoolConnection, query, query_as, Postgres};
-use std::collections::VecDeque;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub(crate) async fn is_username_taken(username: &str, db: &mut PoolConnection<Postgres>) -> bool {

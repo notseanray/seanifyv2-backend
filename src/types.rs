@@ -127,12 +127,12 @@ pub struct User {
 
 // no need to convert structs just to do a tiny operation
 impl User {
-    pub fn now_playing(&mut self, new_song: String) -> Vec<String> {
+    pub fn now_playing(&mut self, new_song: String) -> &Vec<String> {
         if self.last_played.len() > MAX_LAST_PLAYED {
             self.last_played.remove(0);
         }
         self.last_played.push(new_song);
-        self.last_played
+        &self.last_played
     }
     pub fn follow(&mut self, follower: String) {
         self.followers.push(follower);
@@ -151,13 +151,9 @@ impl User {
     }
 
     pub async fn from_username(db: &mut PoolConnection<Postgres>, username: &str) -> Option<Self> {
-        if let Ok(v) = query_as!(
-            User,
-            "select * from users where username = $1",
-            username
-        )
-        .fetch_optional(db)
-        .await
+        if let Ok(v) = query_as!(User, "select * from users where username = $1", username)
+            .fetch_optional(db)
+            .await
         {
             return v;
         }
@@ -265,7 +261,7 @@ impl<'a> Song {
             ) {
                 // ws msg
                 let mut db = fetch_db!();
-                SONG_SEARCH.get().await.write().unwrap().update(&mut db);
+                SONG_SEARCH.get().await.write().await.update(&mut db).await;
                 None
             } else {
                 None
@@ -413,22 +409,11 @@ pub struct PlaylistEditable {
 }
 
 impl Playlist {
-    pub fn like(previous: &str, follower: &str) -> String {
-        if previous.is_empty() {
-            follower.to_string()
-        } else {
-            format!("{previous}`{follower}")
-        }
+    pub fn like(&mut self, like: String) {
+        self.likes.push(like)
     }
-    pub fn dislike(previous: &str, unfollower: &str) -> String {
-        let mut new = previous.replace(unfollower, "").replace("``", "`");
-        if new.starts_with('`') && new.len() > 1 {
-            new = new[1..].to_string();
-        }
-        if new.ends_with('`') && new.len() > 1 {
-            new = new[..new.len() - 1].to_string();
-        }
-        new
+    pub fn dislike(&mut self, disliker: &str) {
+        self.likes.retain(|x| x.as_str() != disliker)
     }
     pub fn update(playlist: &mut Self, data: PlaylistEditable) -> &mut Self {
         playlist.name = data.name;
@@ -457,7 +442,13 @@ impl Playlist {
         let mut new_duration: f64 = 0.0;
         if current_playlist.songs != data.songs {
             for song in data.songs.iter() {
-                if let Some(song) = SONG_SEARCH.get().await.write().unwrap().get_by_id(song.as_str()) {
+                if let Some(song) = SONG_SEARCH
+                    .get()
+                    .await
+                    .write()
+                    .await
+                    .get_by_id(song.as_str())
+                {
                     new_duration += song.duration;
                 } else {
                     return Err(PlaylistError::InvalidSong);
@@ -466,7 +457,7 @@ impl Playlist {
         }
         data.duration = (new_duration + 0.5) as i64;
         // let current_playlist: Playlist = current_playlist.into();
-        let result = query!("update playlist set public_playlist = $1, songs = $2, description = $3, likes = $4, cover = $5, duration = $6, lastupdate = $7, name = $8", data.public_playlist, &data.songs, data.description, &data.likes, data.cover, data.duration, data.lastupdate, data.name).execute(&mut db).await;
+        let result = query!("update playlist set public_playlist = $1, songs = $2, description = $3, likes = $4, cover = $5, duration = $6, lastupdate = $7 where name = $8 and author = $9", data.public_playlist, &data.songs, data.description, &data.likes, data.cover, data.duration, data.lastupdate, data.name, data.author).execute(&mut db).await;
         if result.is_ok() {
             Ok(())
         } else {
