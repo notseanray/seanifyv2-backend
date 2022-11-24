@@ -1,15 +1,16 @@
 use crate::extractors::Claims;
 use crate::fetch_db;
 use crate::fuzzy::SearchType;
+use crate::types::Song;
 use crate::types::User;
+use crate::types::MAX_SEARCH_RESULTS;
 use crate::DB;
 use crate::DOWNLOAD_CACHE;
 use crate::SONG_SEARCH;
-use actix_web::HttpResponseBuilder;
 use actix_web::{get, web, Responder};
 use actix_web::{HttpRequest, HttpResponse};
-use reqwest::StatusCode;
 use sqlx::query_as;
+use std::sync::Arc;
 use web::Path;
 
 use sqlx::query;
@@ -49,6 +50,23 @@ pub async fn clear_cache(claims: Claims) -> impl Responder {
     }
     DOWNLOAD_CACHE.lock().unwrap().clear();
     HttpResponse::Ok()
+}
+
+#[get("/{song}")]
+pub async fn song_get_data(claims: Claims, song: Path<String>) -> impl Responder {
+    let mut db = fetch_db!();
+    let song = song.to_string();
+    let Some(_u) = User::from_id(&mut db, &claims.sub).await else {
+        return "".into();
+    };
+    let Ok(song) = query_as!(Song, "select * from songs where id = $1", song).fetch_optional(&mut db).await else {
+        return "{}".into();
+    };
+    if let Ok(v) = serde_json::to_string(&song) {
+        v
+    } else {
+        "".into()
+    }
 }
 
 #[get("/{song}/delete")]
@@ -139,7 +157,7 @@ pub async fn song_delete(claims: Claims, req: HttpRequest) -> impl Responder {
     {
         return HttpResponse::Ok();
     }
-    return HttpResponse::BadRequest();
+    HttpResponse::BadRequest()
 }
 
 #[get("/{song}/like")]
@@ -196,9 +214,9 @@ pub async fn song_search(claims: Claims, req: HttpRequest) -> impl Responder {
             .to_str()
             .unwrap_or_default()
             .parse::<usize>()
-            .unwrap_or(30)
+            .unwrap_or(MAX_SEARCH_RESULTS)
     } else {
-        30
+        MAX_SEARCH_RESULTS
     };
     let mut db = fetch_db!();
     if let Some(search_term) = req.headers().get("search") {
@@ -208,18 +226,33 @@ pub async fn song_search(claims: Claims, req: HttpRequest) -> impl Responder {
         ) else {
             return String::from("{}");
         };
+        // remove get by id
         if let SearchType::Id = search_type {
-            return match &SONG_SEARCH.get().await.write().await.get_by_id(search_term) {
-                Some(v) => serde_json::to_string(v).unwrap(),
-                _ => String::from("{}"),
+            let Ok(song) = query_as!(Song, "select * from songs where id = $1", search_term).fetch_optional(&mut db).await else {
+                return "{}".into();
+            };
+            return if let Ok(v) = serde_json::to_string(&song) {
+                v
+            } else {
+                "".into()
             };
         }
-        return serde_json::to_string(&SONG_SEARCH.get().await.write().await.search(
-            search_term,
-            search_type,
-            search_count,
-        ))
-        .unwrap();
+        let search_term = Arc::new(search_term.to_string());
+        let res = tokio::spawn(async move {
+            let search_term = search_term.clone();
+            serde_json::to_string(&SONG_SEARCH.get().await.write().await.search(
+                &search_term,
+                search_type,
+                search_count,
+            ))
+            .ok()
+        })
+        .await;
+        return if let Ok(Some(v)) = res {
+            v
+        } else {
+            "[]".to_string()
+        };
     }
-    String::from("{}")
+    String::from("[]")
 }

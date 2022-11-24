@@ -8,12 +8,13 @@ use anyhow::{anyhow, Result};
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use sqlx::{pool::PoolConnection, query, query_as, Postgres};
+use std::future::Future;
 use std::{collections::VecDeque, fs, process::Command};
 
 // The number of songs that we report back with last played
 // const LAST_PLAYED_LENGTH: usize = 30;
-const MAX_LAST_PLAYED: usize = 30;
-const MAX_SEARCH_RESULTS: usize = 30;
+pub(crate) const MAX_LAST_PLAYED: usize = 30;
+pub(crate) const MAX_SEARCH_RESULTS: usize = 30;
 
 #[allow(dead_code)]
 #[derive(Deserialize)]
@@ -457,7 +458,30 @@ impl Playlist {
         }
         data.duration = (new_duration + 0.5) as i64;
         // let current_playlist: Playlist = current_playlist.into();
-        let result = query!("update playlist set public_playlist = $1, songs = $2, description = $3, likes = $4, cover = $5, duration = $6, lastupdate = $7 where name = $8 and author = $9", data.public_playlist, &data.songs, data.description, &data.likes, data.cover, data.duration, data.lastupdate, data.name, data.author).execute(&mut db).await;
+        let result = query!(
+            r#"update playlist set
+                public_playlist = $1,
+                songs = $2,
+                description = $3,
+                likes = $4,
+                cover = $5,
+                duration = $6,
+                lastupdate = $7
+            where
+                name = $8 and
+                author = $9"#,
+            data.public_playlist,
+            &data.songs,
+            data.description,
+            &data.likes,
+            data.cover,
+            data.duration,
+            data.lastupdate,
+            data.name,
+            data.author
+        )
+        .execute(&mut db)
+        .await;
         if result.is_ok() {
             Ok(())
         } else {

@@ -10,7 +10,7 @@ use actix_web_httpauth::{
 use derive_more::Display;
 use jsonwebtoken::{
     decode, decode_header,
-    jwk::{AlgorithmParameters, JwkSet},
+    jwk::{self, AlgorithmParameters, JwkSet},
     Algorithm, DecodingKey, Validation,
 };
 use serde::Deserialize;
@@ -43,6 +43,10 @@ enum ClientError {
     UnsupportedAlgortithm(AlgorithmParameters),
     #[display(fmt = "invalid user id")]
     InvalidUserID(String),
+    #[display(fmt = "invalid json")]
+    InvalidJson,
+    #[display(fmt = "invalid issuer url")]
+    InvalidIssuerUrl,
 }
 
 impl ResponseError for ClientError {
@@ -79,6 +83,16 @@ impl ResponseError for ClientError {
                 error_description: Some(msg.to_string()),
                 message: "invalid user id".to_string(),
             }),
+            Self::InvalidJson => HttpResponse::BadRequest().json(ErrorMessage {
+                error: Some("invalid_json_recieved_for_jwt".to_string()),
+                error_description: None,
+                message: "invalid json recieved for jwt".to_string(),
+            }),
+            Self::InvalidIssuerUrl => HttpResponse::BadRequest().json(ErrorMessage {
+                error: Some("invalid_issuer_url".to_string()),
+                error_description: None,
+                message: "failed to construct issuer url".to_string(),
+            }),
         }
     }
 
@@ -111,13 +125,15 @@ impl FromRequest for Claims {
                 ClientError::NotFound("kid not found in token header".to_string())
             })?;
             let domain = config.domain.as_str();
-            let jwks = reqwest::get(format!("https://{domain}/.well-known/jwks.json"))
-                .await
-                .unwrap()
-                .text()
-                .await
-                .unwrap();
-            let jwks: JwkSet = serde_json::from_str(&jwks).unwrap();
+            let Ok(jwks) = reqwest::get(format!("https://{domain}/.well-known/jwks.json")).await else {
+                Err(ClientError::NotFound("kid not found in token header".to_string()))?
+            };
+            let Ok(jwks) = jwks.text().await else {
+                Err(ClientError::NotFound("kid not found in token header".to_string()))?
+            };
+            let Ok(jwks): Result<JwkSet, _> = serde_json::from_str(&jwks) else {
+                Err(ClientError::InvalidJson)?
+            };
             let jwk = jwks
                 .find(&kid)
                 .ok_or_else(|| ClientError::NotFound("No JWK found for kid".to_string()))?;
@@ -125,12 +141,14 @@ impl FromRequest for Claims {
                 AlgorithmParameters::RSA(ref rsa) => {
                     let mut validation = Validation::new(Algorithm::RS256);
                     validation.set_audience(&[config.audience]);
-                    validation.set_issuer(&[Uri::builder()
+                    let Ok(issuer) = Uri::builder()
                         .scheme("https")
                         .authority(domain)
                         .path_and_query("/")
-                        .build()
-                        .unwrap()]);
+                        .build() else {
+                            return Err(ClientError::InvalidIssuerUrl)?
+                        };
+                    validation.set_issuer(&[issuer]);
                     let key = DecodingKey::from_rsa_components(&rsa.n, &rsa.e)
                         .map_err(ClientError::Decode)?;
                     let token =

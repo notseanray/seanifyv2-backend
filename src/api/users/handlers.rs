@@ -34,6 +34,9 @@ pub(crate) async fn upload_pfp(
         Ok("image/jpeg" | "jpeg") => "jpg",
         _ => return Ok(HttpResponse::BadRequest().into()),
     };
+    if !Path::new("./profiles").exists() && fs::create_dir_all("./profiles").is_err() {
+        return Ok(HttpResponse::InternalServerError().into());
+    }
     let path = Arc::new(format!("./profiles/{}.{}", &claims.sub, file_extension));
     let mut init_part = false;
     let mut filename = String::new();
@@ -128,7 +131,40 @@ pub async fn user_new(claims: Claims, req: HttpRequest) -> impl Responder {
             admin: false,
             ..data
         };
-        let _ = query!("insert into users(id, username, serverside, thumbnails, autoplay, allow_followers, public_account, activity, last_played, display_name, followers, following, analytics, lastupdate) values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)", data.id, data.username, data.serverside, data.thumbnails, data.autoplay, data.allow_followers, data.public_account, data.activity, &data.last_played, data.display_name, &data.followers, &data.following, data.analytics, data.lastupdate).execute(&mut db).await;
+        let _ = query!(
+            r#"insert into users(
+                id,
+                username,
+                serverside,
+                thumbnails,
+                autoplay,
+                allow_followers,
+                public_account,
+                activity,
+                last_played,
+                display_name,
+                followers,
+                following,
+                analytics,
+                lastupdate)
+            values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)"#,
+            data.id,
+            data.username,
+            data.serverside,
+            data.thumbnails,
+            data.autoplay,
+            data.allow_followers,
+            data.public_account,
+            data.activity,
+            &data.last_played,
+            data.display_name,
+            &data.followers,
+            &data.following,
+            data.analytics,
+            data.lastupdate
+        )
+        .execute(&mut db)
+        .await;
     }
     HttpResponse::Ok()
 }
@@ -155,7 +191,40 @@ pub async fn edit(claims: Claims, req: HttpRequest) -> impl Responder {
                 admin: v.admin,
                 ..data
             };
-            let _ = query!("insert into users(id, username, serverside, thumbnails, autoplay, allow_followers, public_account, activity, last_played, display_name, followers, following, analytics, lastupdate) values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)", data.id, data.username, data.serverside, data.thumbnails, data.autoplay, data.allow_followers, data.public_account, data.activity, &data.last_played, data.display_name, &data.followers, &data.following, data.analytics, data.lastupdate).execute(&mut db).await;
+            let _ = query!(
+                "insert into users(
+                    id, 
+                    username, 
+                    serverside, 
+                    thumbnails, 
+                    autoplay, 
+                    allow_followers, 
+                    public_account, 
+                    activity, 
+                    last_played, 
+                    display_name, 
+                    followers, 
+                    following, 
+                    analytics, 
+                    lastupdate) 
+                values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
+                data.id,
+                data.username,
+                data.serverside,
+                data.thumbnails,
+                data.autoplay,
+                data.allow_followers,
+                data.public_account,
+                data.activity,
+                &data.last_played,
+                data.display_name,
+                &data.followers,
+                &data.following,
+                data.analytics,
+                data.lastupdate
+            )
+            .execute(&mut db)
+            .await;
         }
     }
     HttpResponse::Ok()

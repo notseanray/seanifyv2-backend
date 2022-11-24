@@ -11,6 +11,7 @@ use dotenv::dotenv;
 
 use crate::types::{Config, DownloadCache, SongSearch};
 use actix::{Actor, StreamHandler};
+use actix_files::Files;
 use actix_web::{get, web, Error as ActixError, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
 use async_once::AsyncOnce;
@@ -35,7 +36,7 @@ lazy_static! {
     });
     pub(crate) static ref SONG_SEARCH: AsyncOnce<Arc<RwLock<SongSearch>>> = AsyncOnce::new(async {
         Arc::new(RwLock::new(
-            SongSearch::load(&mut (*DB.get().await).db.try_acquire().unwrap()).await,
+            SongSearch::load(&mut (DB.get().await).db.try_acquire().unwrap()).await,
         ))
     });
     pub(crate) static ref DOWNLOAD_CACHE: Arc<Mutex<DownloadCache>> =
@@ -101,7 +102,6 @@ async fn main() -> std::io::Result<()> {
         let cors = Cors::permissive();
         App::new()
             .app_data(auth0_config)
-            .app_data(&*DB)
             .wrap(cors)
             .wrap(middlewares::err_handlers())
             .wrap(middlewares::security_headers())
@@ -109,6 +109,11 @@ async fn main() -> std::io::Result<()> {
             .service(ws_routes())
             .service(api::routes::general_routes())
             .service(api::users::routes())
+            .service(api::playlist::routes())
+            .service(api::songs::routes())
+            .service(Files::new("./profiles", "."))
+            .service(Files::new("./playlist", "."))
+            .service(Files::new("./songs", "."))
     })
     .bind((&*CONFIG.host, CONFIG.port))?
     .run()

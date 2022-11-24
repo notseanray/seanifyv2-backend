@@ -6,7 +6,9 @@ use actix_multipart::Multipart;
 use actix_web::{get, post, web, Error, Responder};
 use actix_web::{HttpRequest, HttpResponse};
 use futures::TryStreamExt;
+use std::fs;
 use std::io::Write;
+use std::path::Path as stdpath;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use web::Path;
@@ -31,7 +33,10 @@ pub(crate) async fn upload_cover(
         Ok("image/jpeg" | "jpeg") => "jpg",
         _ => return Ok(HttpResponse::BadRequest().into()),
     };
-    let path = Arc::new(format!("./profiles/{}.{}", &claims.sub, file_extension));
+    if !stdpath::new("./playlist").exists() && fs::create_dir_all("./playlist").is_err() {
+        return Ok(HttpResponse::InternalServerError().into());
+    }
+    let path = Arc::new(format!("./playlist/{}.{}", &claims.sub, file_extension));
     let mut init_part = false;
     let mut filename = String::new();
     while let Some(mut field) = payload.try_next().await? {
@@ -63,10 +68,10 @@ pub(crate) async fn upload_cover(
 pub async fn delete_cover(claims: Claims) -> impl Responder {
     let _ = web::block(move || {
         let path = format!("./profiles/{}/.", claims.sub);
-        if Path::new(&(path.to_owned() + "png")).exists() {
+        if stdpath::new(&(path.to_owned() + "png")).exists() {
             let _ = fs::remove_file(&path);
         }
-        if Path::new(&(path.to_owned() + "jpg")).exists() {
+        if stdpath::new(&(path.to_owned() + "jpg")).exists() {
             let _ = fs::remove_file(&path);
         }
     })
@@ -116,7 +121,6 @@ pub async fn playlist_user_data(username: Path<String>, claims: Claims) -> impl 
     let playlist: Vec<Playlist> = v
         .into_iter()
         .filter_map(|x| {
-            let x: Playlist = x.into();
             if x.author_id == claims.sub
                 || x.edit_list.contains(&username)
                 || x.public_playlist
@@ -158,7 +162,6 @@ pub async fn playlist_hash(
     let v: Vec<Playlist> = v
         .into_iter()
         .filter_map(|x| {
-            let x: Playlist = x.into();
             if x.author_id == claims.sub
                 || x.edit_list.contains(&username)
                 || x.public_playlist
@@ -204,7 +207,6 @@ pub async fn playlist_data(
     let playlist: Vec<Playlist> = v
         .into_iter()
         .filter_map(|x| {
-            let x: Playlist = x.into();
             if x.author_id == claims.sub || x.edit_list.contains(&username) || x.public_playlist {
                 Some(x)
             } else {
@@ -287,7 +289,7 @@ pub async fn playlist_dislike(
     let Ok(Some(mut v)) = playlist else {
         return HttpResponse::BadRequest();
     };
-    let followers = v.dislike(&claims.sub);
+    v.dislike(&claims.sub);
     if !(v.author_id == claims.sub
         || v.edit_list.contains(&claims.sub)
         || v.public_playlist
@@ -324,13 +326,13 @@ pub async fn playlist_remove(
     let Ok(songs_to_remove) = songs_to_remove.to_str() else {
         return HttpResponse::BadRequest();
     };
-    let Ok(songs_to_remove): Result<Vec<String>, _> = serde_json::from_str(&songs_to_remove) else {
+    let Ok(songs_to_remove): Result<Vec<String>, _> = serde_json::from_str(songs_to_remove) else {
         return HttpResponse::BadRequest();
     };
     let playlist_name = playlist_name.to_string();
     let username = username.to_string();
     let mut db = fetch_db!();
-    let Some(u) = User::from_id(&mut db, &claims.sub).await else {
+    let Some(_u) = User::from_id(&mut db, &claims.sub).await else {
         return HttpResponse::Forbidden();
     };
     let playlist = query_as!(
@@ -374,13 +376,13 @@ pub async fn playlist_add(
     let Ok(songs_to_add) = songs_to_add.to_str() else {
         return HttpResponse::BadRequest();
     };
-    let Ok(mut songs_to_add): Result<Vec<String>, _> = serde_json::from_str(&songs_to_add) else {
+    let Ok(mut songs_to_add): Result<Vec<String>, _> = serde_json::from_str(songs_to_add) else {
         return HttpResponse::BadRequest();
     };
     let playlist_name = playlist_name.to_string();
     let username = username.to_string();
     let mut db = fetch_db!();
-    let Some(u) = User::from_id(&mut db, &claims.sub).await else {
+    let Some(_u) = User::from_id(&mut db, &claims.sub).await else {
         return HttpResponse::Forbidden();
     };
     let playlist = query_as!(
