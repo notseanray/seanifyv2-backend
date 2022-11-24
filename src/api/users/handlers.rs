@@ -5,11 +5,77 @@ use crate::types::User;
 use crate::DB;
 use crate::{fetch_db, response};
 use crate::{time, BRANCH, VERSION};
-use actix_web::{get, web, Responder};
+use actix_multipart::Multipart;
+use actix_web::{get, post, web, Error, Responder};
 use actix_web::{HttpRequest, HttpResponse};
-use reqwest::StatusCode;
+use futures::TryStreamExt;
 use sqlx::{pool::PoolConnection, query, query_as, Postgres};
+use std::fs;
+use std::io::Write;
+use std::path::Path;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+#[post("/upload_pfp")]
+pub(crate) async fn upload_pfp(
+    req: HttpRequest,
+    claims: Claims,
+    mut payload: Multipart,
+) -> Result<HttpResponse, Error> {
+    // once we have the first check we don't have to keep getting the filename
+    if claims.sub.contains('/') {
+        return Ok(HttpResponse::BadRequest().into());
+    }
+    let Some(mime_type) = req.headers().get("ContentType") else {
+        return Ok(HttpResponse::BadRequest().into());
+    };
+    let file_extension = match mime_type.to_str() {
+        Ok("image/png" | "png") => "png",
+        Ok("image/jpeg" | "jpeg") => "jpg",
+        _ => return Ok(HttpResponse::BadRequest().into()),
+    };
+    let path = Arc::new(format!("./profiles/{}.{}", &claims.sub, file_extension));
+    let mut init_part = false;
+    let mut filename = String::new();
+    while let Some(mut field) = payload.try_next().await? {
+        let content_disposition = field.content_disposition();
+        let Some(form_file_name) = content_disposition.get_filename() else {
+            return Ok(HttpResponse::BadRequest().into());
+        };
+        if !init_part {
+            filename = form_file_name.to_string();
+            init_part = true;
+        } else if form_file_name != filename.as_str() {
+            // if all the chunks don't have the same file name we have an issue
+            return Ok(HttpResponse::BadRequest().into());
+        }
+
+        let path = path.clone();
+        // blocking op, use threadpool
+        let mut f = web::block(move || std::fs::File::create(&*path)).await??;
+
+        while let Some(chunk) = field.try_next().await? {
+            // blocking op, again using threadpool
+            f = web::block(move || f.write_all(&chunk).map(|_| f)).await??;
+        }
+    }
+    Ok(HttpResponse::Ok().into())
+}
+
+#[post("/delete_pfp")]
+pub async fn delete_pfp(claims: Claims) -> impl Responder {
+    let _ = web::block(move || {
+        let path = format!("./profiles/{}/.", claims.sub);
+        if Path::new(&(path.to_owned() + "png")).exists() {
+            let _ = fs::remove_file(&path);
+        }
+        if Path::new(&(path.to_owned() + "jpg")).exists() {
+            let _ = fs::remove_file(&path);
+        }
+    })
+    .await;
+    HttpResponse::Ok()
+}
 
 pub(crate) async fn is_username_taken(username: &str, db: &mut PoolConnection<Postgres>) -> bool {
     let result = query!("select * from users where username = $1", username)
@@ -41,7 +107,7 @@ pub async fn user_self(claims: Claims) -> impl Responder {
     if let Ok(Some(v)) = result {
         return response!(serde_json::to_string(&v).unwrap());
     }
-    response!("failed to fetch user data, does the account exist?")
+    response!("")
 }
 
 #[get("/new")]
@@ -51,7 +117,7 @@ pub async fn user_new(claims: Claims, req: HttpRequest) -> impl Responder {
         let data: User = serde_json::from_str(v.to_str().unwrap()).unwrap();
         let mut db = fetch_db!();
         if is_username_taken(&data.username, &mut db).await {
-            return response!("failed to create new user");
+            return HttpResponse::NotAcceptable();
         }
         let data = User {
             id: claims.sub,
@@ -64,7 +130,7 @@ pub async fn user_new(claims: Claims, req: HttpRequest) -> impl Responder {
         };
         let _ = query!("insert into users(id, username, serverside, thumbnails, autoplay, allow_followers, public_account, activity, last_played, display_name, followers, following, analytics, lastupdate) values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)", data.id, data.username, data.serverside, data.thumbnails, data.autoplay, data.allow_followers, data.public_account, data.activity, &data.last_played, data.display_name, &data.followers, &data.following, data.analytics, data.lastupdate).execute(&mut db).await;
     }
-    response!("done")
+    HttpResponse::Ok()
 }
 
 #[get("/edit")]
@@ -74,7 +140,7 @@ pub async fn edit(claims: Claims, req: HttpRequest) -> impl Responder {
         let data: User = serde_json::from_str(v.to_str().unwrap()).unwrap();
         let mut db = fetch_db!();
         if is_username_taken(&data.username, &mut db).await {
-            return response!("failed to create new user");
+            return HttpResponse::NotAcceptable();
         }
         let result = query_as!(User, "select * from users where id = $1", claims.sub)
             .fetch_optional(&mut db)
@@ -92,7 +158,7 @@ pub async fn edit(claims: Claims, req: HttpRequest) -> impl Responder {
             let _ = query!("insert into users(id, username, serverside, thumbnails, autoplay, allow_followers, public_account, activity, last_played, display_name, followers, following, analytics, lastupdate) values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)", data.id, data.username, data.serverside, data.thumbnails, data.autoplay, data.allow_followers, data.public_account, data.activity, &data.last_played, data.display_name, &data.followers, &data.following, data.analytics, data.lastupdate).execute(&mut db).await;
         }
     }
-    response!("done")
+    HttpResponse::Ok()
 }
 
 #[get("/follow/{user}")]
@@ -153,9 +219,9 @@ pub async fn delete(claims: Claims) -> impl Responder {
         .await
         .is_ok()
     {
-        HttpResponse::new(StatusCode::OK)
+        HttpResponse::Ok()
     } else {
-        HttpResponse::new(StatusCode::SERVICE_UNAVAILABLE)
+        HttpResponse::ServiceUnavailable()
     }
 }
 

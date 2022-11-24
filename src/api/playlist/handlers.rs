@@ -2,12 +2,77 @@ use crate::extractors::Claims;
 use crate::types::{Playlist, User};
 use crate::DB;
 use crate::{fetch_db, time};
-use actix_web::{get, web, Responder};
+use actix_multipart::Multipart;
+use actix_web::{get, post, web, Error, Responder};
 use actix_web::{HttpRequest, HttpResponse};
+use futures::TryStreamExt;
+use std::io::Write;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use web::Path;
 
 use sqlx::{query, query_as};
+
+#[post("/upload_cover")]
+pub(crate) async fn upload_cover(
+    req: HttpRequest,
+    claims: Claims,
+    mut payload: Multipart,
+) -> Result<HttpResponse, Error> {
+    // once we have the first check we don't have to keep getting the filename
+    if claims.sub.contains('/') {
+        return Ok(HttpResponse::BadRequest().into());
+    }
+    let Some(mime_type) = req.headers().get("ContentType") else {
+        return Ok(HttpResponse::BadRequest().into());
+    };
+    let file_extension = match mime_type.to_str() {
+        Ok("image/png" | "png") => "png",
+        Ok("image/jpeg" | "jpeg") => "jpg",
+        _ => return Ok(HttpResponse::BadRequest().into()),
+    };
+    let path = Arc::new(format!("./profiles/{}.{}", &claims.sub, file_extension));
+    let mut init_part = false;
+    let mut filename = String::new();
+    while let Some(mut field) = payload.try_next().await? {
+        let content_disposition = field.content_disposition();
+        let Some(form_file_name) = content_disposition.get_filename() else {
+            return Ok(HttpResponse::BadRequest().into());
+        };
+        if !init_part {
+            filename = form_file_name.to_string();
+            init_part = true;
+        } else if form_file_name != filename.as_str() {
+            // if all the chunks don't have the same file name we have an issue
+            return Ok(HttpResponse::BadRequest().into());
+        }
+
+        let path = path.clone();
+        // blocking op, use threadpool
+        let mut f = web::block(move || std::fs::File::create(&*path)).await??;
+
+        while let Some(chunk) = field.try_next().await? {
+            // blocking op, again using threadpool
+            f = web::block(move || f.write_all(&chunk).map(|_| f)).await??;
+        }
+    }
+    Ok(HttpResponse::Ok().into())
+}
+
+#[post("/delete_cover")]
+pub async fn delete_cover(claims: Claims) -> impl Responder {
+    let _ = web::block(move || {
+        let path = format!("./profiles/{}/.", claims.sub);
+        if Path::new(&(path.to_owned() + "png")).exists() {
+            let _ = fs::remove_file(&path);
+        }
+        if Path::new(&(path.to_owned() + "jpg")).exists() {
+            let _ = fs::remove_file(&path);
+        }
+    })
+    .await;
+    HttpResponse::Ok()
+}
 
 #[get("/new")]
 pub async fn playlist_new(claims: Claims, req: HttpRequest) -> impl Responder {

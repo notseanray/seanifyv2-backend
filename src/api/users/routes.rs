@@ -3,6 +3,8 @@ use actix_web::{web, Scope};
 
 pub fn routes() -> Scope {
     web::scope("/users")
+        .service(handlers::upload_pfp)
+        .service(handlers::delete_pfp)
         .service(handlers::user_taken)
         .service(handlers::user_new)
         .service(handlers::user_self)
